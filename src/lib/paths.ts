@@ -1,0 +1,17 @@
+export const paths = {
+  posts: () => '/',
+  postDetail: (id: string, slug: string) => `/posts/${id}/${slug}`,
+  myPosts: () => '/my-posts',
+  myPostsNew: () => '/my-posts/new',
+  myPostEdit: (id: string) => `/my-posts/${id}/edit`,
+  paymentsSuccess: () => '/payments/success',
+  paymentsCancel: () => '/payments/cancel',
+  users: () => '/users',
+  profile: () => '/profile',
+  profileEdit: () => '/profile/edit',
+  analytics: () => '/analytics',
+  chat: () => '/chat',
+  chatRoom: (id: string) => `/chat/${id}`,
+  login: (from?: string) => (from ? `/login?from=${encodeURIComponent(from)}` : '/login'),
+  register: (from?: string) => (from ? `/register?from=${encodeURIComponent(from)}` : '/register'),
+} as const;
