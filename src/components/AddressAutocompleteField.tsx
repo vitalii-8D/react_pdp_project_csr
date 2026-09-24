@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { geocodeSearch, type AddressSuggestion } from '../lib/geocode';
+import { MIN_QUERY_LENGTH } from '../lib/search-constants';
 
-const MIN_QUERY_LENGTH = 3;
 const DEBOUNCE_MS = 500;
 
 interface AddressAutocompleteFieldProps {

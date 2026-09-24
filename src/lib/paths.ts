@@ -12,6 +12,8 @@ export const paths = {
   analytics: () => '/analytics',
   chat: () => '/chat',
   chatRoom: (id: string) => `/chat/${id}`,
+  chatV2: () => '/chat-v2',
+  chatV2Room: (id: string) => `/chat-v2/${id}`,
   login: (from?: string) => (from ? `/login?from=${encodeURIComponent(from)}` : '/login'),
   register: (from?: string) => (from ? `/register?from=${encodeURIComponent(from)}` : '/register'),
 } as const;

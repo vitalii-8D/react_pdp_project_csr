@@ -29,6 +29,14 @@ const CHAT_MESSAGE_FIELDS = /* GraphQL */ `
     }
     roomId
     createdAt
+    attachments {
+      id
+      key
+      url
+      originalFileName
+      mimeType
+      sizeBytes
+    }
   }
 `;
 

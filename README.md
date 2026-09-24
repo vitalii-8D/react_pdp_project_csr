@@ -2,7 +2,7 @@
 
 A client-side rendered React application for **PostShare** — a blog/post-publishing platform where users write posts, pay to publish them via Stripe, comment and rate each other's posts, chat in real time, and admins track activity through an analytics dashboard.
 
-This is the pure client-side-rendered (CSR) frontend, built with React 19, React Router 7, Vite and Tailwind CSS. It talks to a separate GraphQL API (NestJS) for data and to a Socket.IO server for real-time chat.
+This is the pure client-side-rendered (CSR) frontend, built with React 19, React Router 7, Vite and Tailwind CSS. It talks to a separate GraphQL API (NestJS) for data, and for real-time chat to either a Socket.IO server (Chat) or GraphQL subscriptions over WebSocket (Chat V2).
 
 ## Tech stack
 
@@ -11,7 +11,8 @@ This is the pure client-side-rendered (CSR) frontend, built with React 19, React
 - **Vite 8** — dev server & build tooling
 - **Tailwind CSS 4**
 - **graphql-request** — GraphQL client (`src/lib/graphql-client.ts`)
-- **socket.io-client** — real-time chat
+- **socket.io-client** — real-time chat (Chat)
+- **graphql-ws** — GraphQL subscriptions for real-time chat (Chat V2)
 - **@stripe/stripe-js** — Stripe Checkout redirect for post publishing
 - **Recharts** — analytics dashboard charts
 
@@ -30,7 +31,7 @@ src/
 └── lib/
     ├── graphql/           # GraphQL queries/mutations, grouped by domain
     ├── graphql-client.ts  # gqlRequest wrapper + error handling
-    ├── config.ts          # Env-driven config (server URL, Stripe key)
+    ├── config.ts          # Env-driven config (server/GraphQL HTTP & WS URLs, Stripe key)
     ├── geocode.ts         # Address autocomplete (OpenStreetMap Nominatim)
     ├── paths.ts           # Centralized route path builders
     └── types.ts           # Shared domain types
@@ -54,6 +55,8 @@ src/
 | `/profile/edit` | Edit profile / avatar | Authenticated |
 | `/chat` | Chat rooms list | Authenticated |
 | `/chat/:roomId` | Chat room | Authenticated |
+| `/chat-v2` | Chat rooms list (GraphQL subscriptions) | Authenticated |
+| `/chat-v2/:roomId` | Chat room (GraphQL subscriptions) | Authenticated |
 | `/analytics` | Analytics dashboard | Authenticated + Admin |
 | `*` | 404 | Public |
 
@@ -66,7 +69,8 @@ Route paths are centralized in `src/lib/paths.ts` — use these builders instead
 - **Posts** — create, edit, list your own posts and browse all published posts with infinite scroll (`useInfiniteScroll`).
 - **Paid publishing** — publishing a post redirects to Stripe Checkout; supports payment retry and refunds, with dedicated success/cancel pages.
 - **Comments & ratings** — comment threads with star ratings on posts.
-- **Real-time chat** — Socket.IO-powered chat rooms with join/leave, live messages, and admin broadcasts.
+- **Real-time chat** — Socket.IO-powered chat rooms with join/leave, live messages, file/image attachments (presigned S3 uploads, up to 25MB), and admin broadcasts.
+- **Chat V2** — the same rooms and messages, but live updates come from GraphQL subscriptions (`chatMessageAdded`, `chatRoomPresence`) over `graphql-ws`, and sending/broadcasting are plain GraphQL mutations.
 - **User directory** — search and browse users.
 - **Profile management** — edit profile details and avatar (presigned image uploads).
 - **Address autocomplete** — location search backed by OpenStreetMap Nominatim.

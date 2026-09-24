@@ -9,7 +9,8 @@ import { Button } from '../components/Button';
 import { TextField } from '../components/TextField';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { useAuth } from '../context/AuthContext';
-import type { CategoryEntity, PostEntity, SearchPostsInput } from '../lib/types';
+import { MIN_QUERY_LENGTH } from '../lib/search-constants';
+import type { CategoryEntity, PostEntity, SearchPostsInput, SearchPostsResult } from '../lib/types';
 
 const READING_TIME_BUCKETS = [
   { label: 'Any length', value: '' },
@@ -22,6 +23,7 @@ export default function PostsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const q = searchParams.get('q') ?? '';
+  const isQueryTooShort = q.length > 0 && q.length < MIN_QUERY_LENGTH;
   const categories = searchParams.getAll('category');
   const from = searchParams.get('from') ?? '';
   const to = searchParams.get('to') ?? '';
@@ -32,6 +34,10 @@ export default function PostsPage() {
   const [nextCursor, setNextCursor] = useState<string | null | undefined>(undefined);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+  const [queryDraft, setQueryDraft] = useState(q);
+  const trimmedQueryDraft = queryDraft.trim();
+  const isSearchDisabled = trimmedQueryDraft.length > 0 && trimmedQueryDraft.length < MIN_QUERY_LENGTH;
+
   const baseInput: SearchPostsInput = {
     ...(q && { query: q }),
     ...(categories.length > 0 && { categories }),
@@ -40,16 +46,22 @@ export default function PostsPage() {
   };
   const baseKey = JSON.stringify(baseInput);
 
+  // A too-short `q` (e.g. typed straight into the URL) skips the search entirely instead of
+  // sending a query the backend would reject or match too broadly.
+  function searchPosts(input: SearchPostsInput): Promise<SearchPostsResult> {
+    return isQueryTooShort
+      ? Promise.resolve({ items: [], nextCursor: null })
+      : searchPostsQuery(token ?? undefined, input);
+  }
+
   useEffect(() => {
     let cancelled = false;
-    Promise.all([searchPostsQuery(token ?? undefined, baseInput), categoriesQuery(token ?? undefined)]).then(
-      ([result, cats]) => {
-        if (cancelled) return;
-        setItems(result.items);
-        setNextCursor(result.nextCursor);
-        setAllCategories(cats);
-      },
-    );
+    Promise.all([searchPosts(baseInput), categoriesQuery(token ?? undefined)]).then(([result, cats]) => {
+      if (cancelled) return;
+      setItems(result.items);
+      setNextCursor(result.nextCursor);
+      setAllCategories(cats);
+    });
     return () => {
       cancelled = true;
     };
@@ -57,7 +69,7 @@ export default function PostsPage() {
   }, [baseKey, token]);
 
   const refetch = useCallback(() => {
-    searchPostsQuery(token ?? undefined, baseInput).then((result) => {
+    searchPosts(baseInput).then((result) => {
       setItems(result.items);
       setNextCursor(result.nextCursor);
     });
@@ -80,6 +92,7 @@ export default function PostsPage() {
 
   function handleFilterSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSearchDisabled) return;
     const formData = new FormData(event.currentTarget);
     const nextParams = new URLSearchParams();
     const newQ = String(formData.get('q') ?? '');
@@ -105,20 +118,26 @@ export default function PostsPage() {
 
       <Card className="p-5 sm:p-6">
         <form onSubmit={handleFilterSubmit} className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-grow">
-              <TextField
-                id="q"
-                label="Search"
-                name="q"
-                type="text"
-                defaultValue={q}
-                placeholder="Search title, content, author..."
-              />
+          <div className="space-y-1">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-grow">
+                <TextField
+                  id="q"
+                  label="Search"
+                  name="q"
+                  type="text"
+                  value={queryDraft}
+                  onChange={(event) => setQueryDraft(event.target.value)}
+                  placeholder="Search title, content, author..."
+                />
+              </div>
+              <div className="flex items-end">
+                <Button type="submit" disabled={isSearchDisabled}>
+                  Search
+                </Button>
+              </div>
             </div>
-            <div className="flex items-end">
-              <Button type="submit">Search</Button>
-            </div>
+            <p className="text-xs text-slate-400">Type at least {MIN_QUERY_LENGTH} characters to search.</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
@@ -167,7 +186,11 @@ export default function PostsPage() {
 
       {items.length === 0 ? (
         <Card className="p-12 text-center">
-          <p className="text-slate-400 text-lg">No posts match your search.</p>
+          <p className="text-slate-400 text-lg">
+            {isQueryTooShort
+              ? `Type at least ${MIN_QUERY_LENGTH} characters to search.`
+              : 'No posts match your search.'}
+          </p>
         </Card>
       ) : (
         <div className="space-y-6">

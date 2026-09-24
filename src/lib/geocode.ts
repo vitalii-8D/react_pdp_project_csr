@@ -1,4 +1,4 @@
-const MIN_QUERY_LENGTH = 3;
+import { MIN_QUERY_LENGTH } from './search-constants';
 
 export interface AddressSuggestion {
   label: string;

@@ -17,6 +17,8 @@ import ProfilePage from './pages/ProfilePage';
 import ProfileEditPage from './pages/ProfileEditPage';
 import ChatPage from './pages/ChatPage';
 import ChatRoomPage from './pages/ChatRoomPage';
+import ChatV2Page from './pages/ChatV2Page';
+import ChatV2RoomPage from './pages/ChatV2RoomPage';
 
 function NotFoundPage() {
   return (
@@ -126,6 +128,23 @@ export default function App() {
           element={
             <RequireAuth>
               <ChatRoomPage />
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="chat-v2"
+          element={
+            <RequireAuth>
+              <ChatV2Page />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="chat-v2/:roomId"
+          element={
+            <RequireAuth>
+              <ChatV2RoomPage />
             </RequireAuth>
           }
         />

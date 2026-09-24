@@ -5,12 +5,18 @@ import { useAuth } from '../context/AuthContext';
 import { searchUsersQuery } from '../lib/graphql/users';
 import { startDirectMessageMutation } from '../lib/graphql/chat';
 import { paths } from '../lib/paths';
+import { MIN_QUERY_LENGTH } from '../lib/search-constants';
 import type { ChatMessageUser } from '../lib/types';
 
-const MIN_QUERY_LENGTH = 3;
 const DEBOUNCE_MS = 300;
 
-export function UserSearch() {
+interface UserSearchProps {
+  // Which chat room route a newly started DM lands on - Chat (Socket.IO) and Chat V2 (GraphQL
+  // subscriptions) share the same rooms but have their own room pages.
+  roomPath?: (id: string) => string;
+}
+
+export function UserSearch({ roomPath = paths.chatRoom }: UserSearchProps) {
   const { token } = useAuth();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
@@ -42,7 +48,7 @@ export function UserSearch() {
     setIsStartingDm(true);
     try {
       const room = await startDirectMessageMutation(token, userId);
-      navigate(paths.chatRoom(room.id));
+      navigate(roomPath(room.id));
     } finally {
       setIsStartingDm(false);
     }

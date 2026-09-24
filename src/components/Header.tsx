@@ -16,7 +16,8 @@ export function Header({ user }: { user?: UserEntity | null }) {
   const { logout } = useAuth();
   const isMyPosts = location.pathname.startsWith(paths.myPosts());
   const isPosts = location.pathname === paths.posts();
-  const isChat = location.pathname.startsWith(paths.chat());
+  const isChat = location.pathname === paths.chat() || location.pathname.startsWith(`${paths.chat()}/`);
+  const isChatV2 = location.pathname.startsWith(paths.chatV2());
   const isUsers = location.pathname.startsWith(paths.users());
   const isAnalytics = location.pathname.startsWith(paths.analytics());
   const isAdmin = user?.role === UserRole.ADMIN;
@@ -53,6 +54,12 @@ export function Header({ user }: { user?: UserEntity | null }) {
               <NavLink to={paths.chat()} isActive={isChat}>
                 <Icons.Chat />
                 <span className="ml-2">Chat</span>
+              </NavLink>
+            )}
+            {user && (
+              <NavLink to={paths.chatV2()} isActive={isChatV2}>
+                <Icons.Chat />
+                <span className="ml-2">Chat V2</span>
               </NavLink>
             )}
             {user && (
@@ -123,6 +130,13 @@ export function Header({ user }: { user?: UserEntity | null }) {
             <NavLink to={paths.chat()} isActive={isChat} size="sm">
               <Icons.Chat />
               <span className="ml-2">Chat</span>
+            </NavLink>
+          )}
+
+          {user && (
+            <NavLink to={paths.chatV2()} isActive={isChatV2} size="sm">
+              <Icons.Chat />
+              <span className="ml-2">Chat V2</span>
             </NavLink>
           )}
 

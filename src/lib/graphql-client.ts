@@ -1,8 +1,8 @@
 import { GraphQLClient, ClientError, type Variables } from 'graphql-request';
 
-import { SERVER_URL } from './config';
+import { GRAPHQL_HTTP_URL } from './config';
 
-const client = new GraphQLClient(`${SERVER_URL}/graphql`);
+const client = new GraphQLClient(GRAPHQL_HTTP_URL);
 
 export class GqlRequestError extends Error {
   status: number;
@@ -31,14 +31,10 @@ function extractMessage(error: ClientError): {
 }
 
 export async function gqlRequest<T>(query: string, variables?: Variables, token?: string): Promise<T> {
-  if (token) {
-    client.setHeader('Authorization', `Bearer ${token}`);
-  } else {
-    client.setHeader('Authorization', '');
-  }
-
+  // Per-request headers rather than `client.setHeader` - the client is shared, so mutating its
+  // headers would let concurrent requests race over whose token gets sent.
   try {
-    return await client.request<T>(query, variables);
+    return await client.request<T>(query, variables, token ? { Authorization: `Bearer ${token}` } : undefined);
   } catch (error) {
     if (error instanceof ClientError) {
       const { message, status } = extractMessage(error);

@@ -6,6 +6,7 @@ import { searchUsersFullQuery } from '../lib/graphql/users';
 import { avatarUrl } from '../lib/images';
 import { paths } from '../lib/paths';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
+import { MIN_QUERY_LENGTH } from '../lib/search-constants';
 import { Card } from '../components/Card';
 import { TextField } from '../components/TextField';
 import { buttonStyles } from '../components/Button';
@@ -33,6 +34,7 @@ export default function UsersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const q = searchParams.get('q') ?? '';
+  const isQueryTooShort = q.length > 0 && q.length < MIN_QUERY_LENGTH;
   const radiusKm = searchParams.get('radiusKm') ?? '';
   const hasLocation = user!.latitude != null && user!.longitude != null;
 
@@ -40,8 +42,18 @@ export default function UsersPage() {
   const [nextCursor, setNextCursor] = useState<string | null | undefined>(undefined);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+  const [queryDraft, setQueryDraft] = useState(q);
+  const trimmedQueryDraft = queryDraft.trim();
+  const isSearchDisabled = trimmedQueryDraft.length > 0 && trimmedQueryDraft.length < MIN_QUERY_LENGTH;
+
   useEffect(() => {
     if (!token) return;
+
+    if (isQueryTooShort) {
+      setItems([]);
+      setNextCursor(null);
+      return;
+    }
 
     const cursor = searchParams.get('cursor');
     const input: SearchUsersInput = {
@@ -78,6 +90,7 @@ export default function UsersPage() {
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSearchDisabled) return;
     const formData = new FormData(event.currentTarget);
     const nextParams = new URLSearchParams();
     const nextQ = String(formData.get('q') ?? '');
@@ -97,7 +110,15 @@ export default function UsersPage() {
       <Card className="p-5 sm:p-6">
         <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 sm:items-end">
           <div className="flex-grow">
-            <TextField id="q" label="Search" name="q" type="text" defaultValue={q} placeholder="Name, email, city..." />
+            <TextField
+              id="q"
+              label="Search"
+              name="q"
+              type="text"
+              value={queryDraft}
+              onChange={(event) => setQueryDraft(event.target.value)}
+              placeholder="Name, email, city..."
+            />
           </div>
           <div className="w-full sm:w-56">
             <label htmlFor="radiusKm" className="block text-sm font-semibold text-slate-700 mb-1.5">
@@ -117,12 +138,13 @@ export default function UsersPage() {
               ))}
             </select>
           </div>
-          <button type="submit" className={buttonStyles()}>
+          <button type="submit" disabled={isSearchDisabled} className={buttonStyles()}>
             Search
           </button>
         </form>
+        <p className="text-xs text-slate-400 mt-3">Type at least {MIN_QUERY_LENGTH} characters to search.</p>
         {!hasLocation && (
-          <p className="text-xs text-slate-400 mt-3">
+          <p className="text-xs text-slate-400 mt-1">
             <Link to={paths.profileEdit()} className="text-blue-600 hover:underline">
               Add your location in your profile
             </Link>{' '}
@@ -133,7 +155,9 @@ export default function UsersPage() {
 
       {items.length === 0 ? (
         <Card className="p-12 text-center">
-          <p className="text-slate-400 text-lg">No users found.</p>
+          <p className="text-slate-400 text-lg">
+            {isQueryTooShort ? `Type at least ${MIN_QUERY_LENGTH} characters to search.` : 'No users found.'}
+          </p>
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">

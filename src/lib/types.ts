@@ -119,6 +119,15 @@ export interface ChatRoomEntity {
   updatedAt: string;
 }
 
+export interface ChatAttachmentEntity {
+  id: string;
+  key: string;
+  url: string;
+  originalFileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface ChatMessageEntity {
   id: string;
   message: string;
@@ -127,6 +136,7 @@ export interface ChatMessageEntity {
   roomId: string;
   createdAt: string;
   isAdminBroadcast?: boolean;
+  attachments: ChatAttachmentEntity[];
 }
 
 export interface PresignedUploadPayload {

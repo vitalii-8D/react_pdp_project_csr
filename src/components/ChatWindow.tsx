@@ -1,15 +1,65 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { io, type Socket } from 'socket.io-client';
 
 import { ChatSocketEvent } from '../enums/chat-socket-event.enum';
-import type { ChatMessageEntity, ChatRoomEntity } from '../lib/types';
+import { UploadPurpose } from '../enums/upload-purpose.enum';
+import { generateUploadUrlMutation } from '../lib/graphql/uploads';
+import { MAX_CHAT_ATTACHMENT_SIZE_BYTES } from '../lib/upload-constraints';
+import type { ChatAttachmentEntity, ChatMessageEntity, ChatRoomEntity } from '../lib/types';
 import { Button } from './Button';
 import { Card } from './Card';
+import { Icons } from './Icons';
 
 interface JoinedRoomPayload {
   room: ChatRoomEntity;
   messages: ChatMessageEntity[];
   success: boolean;
+}
+
+interface PendingAttachment {
+  key: string;
+  url: string;
+  originalFileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ChatAttachmentView({ attachment, isOwn }: { attachment: ChatAttachmentEntity; isOwn: boolean }) {
+  if (attachment.mimeType.startsWith('image/')) {
+    return (
+      <a href={attachment.url} target="_blank" rel="noreferrer" className="block">
+        <img
+          src={attachment.url}
+          alt={attachment.originalFileName}
+          className="max-h-48 w-auto rounded-xl border border-slate-200 object-contain"
+        />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={attachment.url}
+      target="_blank"
+      rel="noreferrer"
+      download={attachment.originalFileName}
+      className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm max-w-[240px] ${
+        isOwn ? 'border-blue-200 bg-blue-50/50 text-blue-900' : 'border-slate-200 bg-white text-slate-700'
+      }`}
+    >
+      <Icons.Download className="w-4 h-4 shrink-0" />
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{attachment.originalFileName}</span>
+        <span className="block text-xs text-slate-400">{formatFileSize(attachment.sizeBytes)}</span>
+      </span>
+    </a>
+  );
 }
 
 interface PresencePayload {
@@ -54,6 +104,9 @@ export function ChatWindow({
   const [sending, setSending] = useState(false);
   const [broadcastDraft, setBroadcastDraft] = useState('');
   const [broadcasting, setBroadcasting] = useState(false);
+  const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   useEffect(() => {
     const socket = io(socketUrl, {
@@ -95,6 +148,7 @@ export function ChatWindow({
     const handleMessageSent = () => {
       setSending(false);
       setDraft('');
+      setPendingAttachment(null);
     };
     const handleBroadcastSent = () => {
       setBroadcasting(false);
@@ -131,7 +185,7 @@ export function ChatWindow({
   function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const message = draft.trim();
-    if (!message || !socketRef.current) {
+    if ((!message && !pendingAttachment) || !socketRef.current) {
       return;
     }
 
@@ -140,8 +194,55 @@ export function ChatWindow({
 
     socketRef.current.emit(ChatSocketEvent.SendMessage, {
       roomId: Number(room.id),
-      message,
+      message: message || undefined,
+      attachments: pendingAttachment ? [pendingAttachment] : undefined,
     });
+  }
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+
+    if (file.size > MAX_CHAT_ATTACHMENT_SIZE_BYTES) {
+      setAttachmentError(`File is too large. Max size is ${formatFileSize(MAX_CHAT_ATTACHMENT_SIZE_BYTES)}.`);
+      return;
+    }
+
+    setAttachmentError(null);
+    setUploadingAttachment(true);
+
+    try {
+      const contentType = file.type || 'application/octet-stream';
+      const { uploadUrl, publicUrl, key } = await generateUploadUrlMutation(token, {
+        purpose: UploadPurpose.ChatAttachment,
+        fileName: file.name,
+        contentType,
+      });
+
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': contentType },
+      });
+      if (!uploadResponse.ok) {
+        throw new Error('Could not upload the file.');
+      }
+
+      setPendingAttachment({
+        key,
+        url: publicUrl,
+        originalFileName: file.name,
+        mimeType: contentType,
+        sizeBytes: file.size,
+      });
+    } catch (uploadError) {
+      setAttachmentError(uploadError instanceof Error ? uploadError.message : 'Upload failed.');
+    } finally {
+      setUploadingAttachment(false);
+    }
   }
 
   function handleBroadcast(event: FormEvent<HTMLFormElement>) {
@@ -202,7 +303,14 @@ export function ChatWindow({
                   {message.isAdminBroadcast && (
                     <p className="text-xs font-bold uppercase tracking-wide mb-1">Announcement</p>
                   )}
-                  <p>{message.message}</p>
+                  {message.message && <p>{message.message}</p>}
+                  {message.attachments?.length > 0 && (
+                    <div className={`flex flex-col gap-2 ${message.message ? 'mt-2' : ''}`}>
+                      {message.attachments.map((attachment) => (
+                        <ChatAttachmentView key={attachment.id} attachment={attachment} isOwn={isOwn} />
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <span className="text-xs text-slate-400 mt-1">{isOwn ? 'You' : message.user.name}</span>
               </div>
@@ -211,17 +319,40 @@ export function ChatWindow({
         )}
       </Card>
 
-      <form onSubmit={handleSendMessage} className="flex gap-2 shrink-0">
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Type a message..."
-          className="flex-grow rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-        <Button type="submit" disabled={sending || !draft.trim()}>
-          Send
-        </Button>
-      </form>
+      <div className="shrink-0 space-y-1.5">
+        {pendingAttachment && (
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 w-fit">
+            <Icons.Attachment className="w-4 h-4 shrink-0 text-slate-400" />
+            <span className="truncate max-w-[200px]">{pendingAttachment.originalFileName}</span>
+            <button
+              type="button"
+              onClick={() => setPendingAttachment(null)}
+              className="text-slate-400 hover:text-red-600"
+              aria-label="Remove attachment"
+            >
+              <Icons.Close />
+            </button>
+          </div>
+        )}
+        {uploadingAttachment && <p className="text-xs text-slate-500">Uploading attachment…</p>}
+        {attachmentError && <p className="text-xs text-red-600">{attachmentError}</p>}
+
+        <form onSubmit={handleSendMessage} className="flex gap-2">
+          <label className="flex items-center justify-center rounded-xl border border-slate-200 px-3 text-slate-500 hover:bg-slate-50 cursor-pointer">
+            <Icons.Attachment />
+            <input type="file" className="hidden" onChange={(event) => void handleFileChange(event)} />
+          </label>
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Type a message..."
+            className="flex-grow rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <Button type="submit" disabled={sending || uploadingAttachment || (!draft.trim() && !pendingAttachment)}>
+            Send
+          </Button>
+        </form>
+      </div>
 
       {isAdmin && !room.isDirect && (
         <Card className="p-4 space-y-2 bg-amber-50/50 border-amber-200 shrink-0">
