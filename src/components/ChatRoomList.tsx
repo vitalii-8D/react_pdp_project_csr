@@ -1,41 +1,42 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
 import { chatRoomsQuery, myDirectMessageRoomsQuery, createChatRoomMutation } from '../lib/graphql/chat';
 import { ChatFormField } from '../enums/chat-form-field.enum';
 import { UserRole } from '../enums/user-role.enum';
-import type { ChatRoomEntity } from '../lib/types';
+import { useQuery } from '../hooks/useQuery';
+import { errorMessage } from '../lib/error-message';
 import { Card } from './Card';
 import { Button } from './Button';
 import { TextField } from './TextField';
 import { UserSearch } from './UserSearch';
+import { ErrorMessage, PageSkeleton } from './PageStatus';
 
 interface ChatRoomListProps {
   title: string;
   subtitle: string;
   roomPath: (id: string) => string;
+  // Loads the room page chunk (and its transport library) on hover/focus of a room link.
+  preloadRoom: () => unknown;
   formIdPrefix: string;
 }
 
 // Shared by ChatPage (Socket.IO) and ChatV2Page (GraphQL subscriptions) - the two transports
 // render an identical room list / DM search / room-creation form over the same rooms, differing
 // only in copy and the room link target.
-export function ChatRoomList({ title, subtitle, roomPath, formIdPrefix }: ChatRoomListProps) {
+export function ChatRoomList({ title, subtitle, roomPath, preloadRoom, formIdPrefix }: ChatRoomListProps) {
   const { token, user } = useAuth();
-  const [rooms, setRooms] = useState<ChatRoomEntity[]>([]);
-  const [directRooms, setDirectRooms] = useState<ChatRoomEntity[]>([]);
+  const {
+    data,
+    error: loadError,
+    setData,
+  } = useQuery(token ? 'chat-rooms' : null, () =>
+    Promise.all([chatRoomsQuery(token ?? ''), myDirectMessageRoomsQuery(token ?? '')]),
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const isAdmin = user?.role === UserRole.ADMIN;
-
-  useEffect(() => {
-    if (!token) return;
-    Promise.all([chatRoomsQuery(token), myDirectMessageRoomsQuery(token)]).then(([r, d]) => {
-      setRooms(r);
-      setDirectRooms(d);
-    });
-  }, [token]);
 
   async function handleCreateRoom(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -53,14 +54,20 @@ export function ChatRoomList({ title, subtitle, roomPath, formIdPrefix }: ChatRo
         name,
         ...(description && { description }),
       });
-      setRooms((prev) => [...prev, room]);
+      setData((prev) => prev && [[...prev[0], room], prev[1]]);
       form.reset();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Could not create the room.');
+      setError(errorMessage(submitError, 'Could not create the room.'));
     } finally {
       setPending(false);
     }
   }
+
+  if (!user) {
+    return null;
+  }
+
+  const [rooms, directRooms] = data ?? [[], []];
 
   return (
     <div className="space-y-6">
@@ -69,14 +76,17 @@ export function ChatRoomList({ title, subtitle, roomPath, formIdPrefix }: ChatRo
         <p className="text-slate-500 mt-1">{subtitle}</p>
       </div>
 
-      {rooms.length === 0 ? (
+      {loadError && <ErrorMessage message={loadError} />}
+      {!data && !loadError && <PageSkeleton />}
+
+      {!data ? null : rooms.length === 0 ? (
         <Card className="p-12 text-center">
           <p className="text-slate-400 text-lg">No chat rooms yet.</p>
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {rooms.map((room) => (
-            <Link key={room.id} to={roomPath(room.id)}>
+            <Link key={room.id} to={roomPath(room.id)} onMouseEnter={preloadRoom} onFocus={preloadRoom}>
               <Card className="p-5 h-full hover:border-blue-200 hover:shadow-md transition-all">
                 <h2 className="font-bold text-slate-900">{room.name}</h2>
                 {room.description && <p className="text-sm text-slate-500 mt-1">{room.description}</p>}
@@ -97,9 +107,9 @@ export function ChatRoomList({ title, subtitle, roomPath, formIdPrefix }: ChatRo
         {directRooms.length > 0 && (
           <div className="space-y-3">
             {directRooms.map((room) => {
-              const otherParticipant = room.participants.find((participant) => participant.id !== user!.id);
+              const otherParticipant = room.participants.find((participant) => participant.id !== user.id);
               return (
-                <Link key={room.id} to={roomPath(room.id)}>
+                <Link key={room.id} to={roomPath(room.id)} onMouseEnter={preloadRoom} onFocus={preloadRoom}>
                   <Card className="p-4 hover:border-blue-200 hover:shadow-md transition-all">
                     <h3 className="font-bold text-slate-900">{otherParticipant?.name ?? room.name}</h3>
                     {otherParticipant && <p className="text-sm text-slate-500">{otherParticipant.email}</p>}

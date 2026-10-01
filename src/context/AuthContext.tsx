@@ -1,15 +1,32 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { GqlRequestError } from '../lib/graphql-client';
-import { loginMutation, createUserMutation, meQuery, type CreateUserInput } from '../lib/graphql/users';
-import type { UserEntity } from '../lib/types';
-
-const TOKEN_STORAGE_KEY = 'token';
+import {
+  loginMutation,
+  createUserMutation,
+  meQuery,
+  type CreateUserInput,
+  type CurrentUser,
+} from '../lib/graphql/users';
+import { clearToken, readToken, writeToken } from '../lib/token-storage';
+import { errorMessage } from '../lib/error-message';
 
 interface AuthContextValue {
   token: string | null;
-  user: UserEntity | null;
+  user: CurrentUser | null;
   isLoading: boolean;
+  // Set when a stored token could not be verified for a reason other than it being invalid (e.g.
+  // the API is down) - the token is kept so a reload can recover, but there is no user.
+  error: string | undefined;
   login: (email: string, password: string) => Promise<void>;
   register: (input: CreateUserInput) => Promise<void>;
   logout: () => void;
@@ -18,41 +35,60 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_STORAGE_KEY));
-  const [user, setUser] = useState<UserEntity | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+function isUnauthorized(error: unknown): boolean {
+  return error instanceof GqlRequestError && error.status === 401;
+}
 
-  const loadUser = useCallback(async (currentToken: string) => {
-    try {
-      const me = await meQuery(currentToken);
-      setUser(me);
-    } catch (error) {
-      if (error instanceof GqlRequestError && error.status === 401) {
-        localStorage.removeItem(TOKEN_STORAGE_KEY);
-        setToken(null);
-        setUser(null);
-        return;
-      }
-      throw error;
-    }
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [token, setToken] = useState<string | null>(readToken);
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  // Only a token found in storage at startup needs verifying - login() receives the user directly.
+  const [isLoading, setIsLoading] = useState(() => token !== null);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const logout = useCallback(() => {
+    clearToken();
+    setToken(null);
+    setUser(null);
+    setError(undefined);
   }, []);
 
-  useEffect(() => {
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
+  const loadStoredUser = useEffectEvent(() => {
+    if (!token) return undefined;
 
-    setIsLoading(true);
-    loadUser(token).finally(() => setIsLoading(false));
-  }, [token, loadUser]);
+    let cancelled = false;
+    async function load(storedToken: string) {
+      try {
+        const me = await meQuery(storedToken);
+        if (!cancelled) setUser(me);
+      } catch (loadError: unknown) {
+        if (cancelled) return;
+        if (isUnauthorized(loadError)) {
+          logout();
+        } else {
+          setError(errorMessage(loadError, 'Could not load your account.'));
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    void load(token);
+
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  // Once per app load. Later token changes come from login()/logout(), which set the user
+  // themselves, so re-running here would only repeat the `me` request and flash the loading state.
+  useEffect(() => loadStoredUser(), []);
 
   const login = useCallback(async (email: string, password: string) => {
     const { accessToken, user: loggedInUser } = await loginMutation(email, password);
-    localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
-    setUser(loggedInUser);
+    writeToken(accessToken);
     setToken(accessToken);
+    setUser(loggedInUser);
+    setError(undefined);
   }, []);
 
   const register = useCallback(
@@ -63,21 +99,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [login],
   );
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-    setToken(null);
-    setUser(null);
-  }, []);
-
   const refetchUser = useCallback(async () => {
-    if (token) {
-      await loadUser(token);
+    if (!token) return;
+    try {
+      setUser(await meQuery(token));
+    } catch (refetchError) {
+      if (isUnauthorized(refetchError)) {
+        logout();
+        return;
+      }
+      throw refetchError;
     }
-  }, [token, loadUser]);
+  }, [token, logout]);
 
   const value = useMemo(
-    () => ({ token, user, isLoading, login, register, logout, refetchUser }),
-    [token, user, isLoading, login, register, logout, refetchUser],
+    () => ({
+      token,
+      user,
+      isLoading,
+      error,
+      login,
+      register,
+      logout,
+      refetchUser,
+    }),
+    [token, user, isLoading, error, login, register, logout, refetchUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

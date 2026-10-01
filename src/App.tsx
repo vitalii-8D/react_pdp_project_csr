@@ -1,24 +1,28 @@
+import { Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 
 import { AppLayout } from './components/AppLayout';
 import { RequireAuth } from './guards/RequireAuth';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import PostsPage from './pages/PostsPage';
-import PostDetailPage from './pages/PostDetailPage';
-import MyPostsPage from './pages/MyPostsPage';
-import MyPostsNewPage from './pages/MyPostsNewPage';
-import MyPostEditPage from './pages/MyPostEditPage';
-import PaymentsSuccessPage from './pages/PaymentsSuccessPage';
-import PaymentsCancelPage from './pages/PaymentsCancelPage';
-import UsersPage from './pages/UsersPage';
-import AnalyticsPage from './pages/AnalyticsPage';
-import ProfilePage from './pages/ProfilePage';
-import ProfileEditPage from './pages/ProfileEditPage';
-import ChatPage from './pages/ChatPage';
-import ChatRoomPage from './pages/ChatRoomPage';
-import ChatV2Page from './pages/ChatV2Page';
-import ChatV2RoomPage from './pages/ChatV2RoomPage';
+import { PageSkeleton } from './components/PageStatus';
+import {
+  LoginPage,
+  RegisterPage,
+  PostsPage,
+  PostDetailPage,
+  MyPostsPage,
+  MyPostsNewPage,
+  MyPostEditPage,
+  PaymentsSuccessPage,
+  PaymentsCancelPage,
+  UsersPage,
+  AnalyticsPage,
+  ProfilePage,
+  ProfileEditPage,
+  ChatPage,
+  ChatRoomPage,
+  ChatV2Page,
+  ChatV2RoomPage,
+} from './routes';
 
 function NotFoundPage() {
   return (
@@ -29,11 +33,36 @@ function NotFoundPage() {
   );
 }
 
+function AuthPageFallback() {
+  return (
+    <div className="min-h-screen bg-slate-50 px-4 py-10">
+      <div className="max-w-sm mx-auto">
+        <PageSkeleton />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      {/* Auth pages render outside AppLayout, so they need their own boundary for the lazy chunk. */}
+      <Route
+        path="/login"
+        element={
+          <Suspense fallback={<AuthPageFallback />}>
+            <LoginPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <Suspense fallback={<AuthPageFallback />}>
+            <RegisterPage />
+          </Suspense>
+        }
+      />
 
       <Route element={<AppLayout />}>
         <Route index element={<PostsPage />} />

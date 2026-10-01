@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
-import { meWithAvatarQuery, updateUserMutation, updateAvatarMutation, type UserAvatarDetails } from '../lib/graphql/users';
+import { updateUserMutation, updateAvatarMutation } from '../lib/graphql/users';
+import { errorMessage } from '../lib/error-message';
 import { AuthFormField } from '../enums/auth-form-field.enum';
 import { AvatarFormField } from '../enums/avatar-form-field.enum';
 import { UploadPurpose } from '../enums/upload-purpose.enum';
@@ -12,20 +13,14 @@ import { TextField } from '../components/TextField';
 import { AddressAutocompleteField } from '../components/AddressAutocompleteField';
 import { ImageUploadField } from '../components/ImageUploadField';
 import { Button, buttonStyles } from '../components/Button';
-import type { UserEntity } from '../lib/types';
 
 export default function ProfileEditPage() {
-  const { token, refetchUser } = useAuth();
+  // AuthContext's user already carries the full avatar record - no need to fetch `me` again here.
+  const { token, user, refetchUser } = useAuth();
   const navigate = useNavigate();
-  const [user, setUser] = useState<(UserEntity & { avatar?: UserAvatarDetails | null }) | null>(null);
   const [pending, setPending] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    if (!token) return;
-    meWithAvatarQuery(token).then(setUser);
-  }, [token]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,7 +63,7 @@ export default function ProfileEditPage() {
       await refetchUser();
       navigate(paths.profile());
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Could not update your profile.');
+      setError(errorMessage(submitError, 'Could not update your profile.'));
     } finally {
       setPending(false);
     }

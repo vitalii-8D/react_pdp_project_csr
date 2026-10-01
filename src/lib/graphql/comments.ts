@@ -1,5 +1,11 @@
 import { gqlRequest } from '../graphql-client';
-import type { CommentEntity, CommentsPerPeriodStat, CommentsPerPostStat, CommentsPerUserStat, RatingDistributionStat } from '../types';
+import type {
+  CommentEntity,
+  CommentsPerPeriodStat,
+  CommentsPerPostStat,
+  CommentsPerUserStat,
+  RatingDistributionStat,
+} from '../types';
 
 const COMMENT_FIELDS = /* GraphQL */ `
   fragment CommentFields on CommentEntity {
@@ -163,10 +169,8 @@ const COMMENT_RATING_DISTRIBUTION_QUERY = /* GraphQL */ `
 `;
 
 export async function commentRatingDistributionQuery(token: string): Promise<RatingDistributionStat[]> {
-  const data = await gqlRequest<{ commentRatingDistribution: RatingDistributionStat[] }>(
-    COMMENT_RATING_DISTRIBUTION_QUERY,
-    undefined,
-    token,
-  );
+  const data = await gqlRequest<{
+    commentRatingDistribution: RatingDistributionStat[];
+  }>(COMMENT_RATING_DISTRIBUTION_QUERY, undefined, token);
   return data.commentRatingDistribution;
 }

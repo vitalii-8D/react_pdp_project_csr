@@ -73,10 +73,7 @@ const REFUND_PAYMENT_MUTATION = /* GraphQL */ `
   }
 `;
 
-export async function refundPaymentMutation(
-  token: string,
-  transactionId: string,
-): Promise<PaymentTransactionEntity> {
+export async function refundPaymentMutation(token: string, transactionId: string): Promise<PaymentTransactionEntity> {
   const data = await gqlRequest<{ refundPayment: PaymentTransactionEntity }>(
     REFUND_PAYMENT_MUTATION,
     { transactionId },
@@ -112,14 +109,9 @@ const TRANSACTIONS_FOR_POST_QUERY = /* GraphQL */ `
   }
 `;
 
-export async function transactionsForPostQuery(
-  token: string,
-  postId: string,
-): Promise<PaymentTransactionEntity[]> {
-  const data = await gqlRequest<{ transactionsForPost: PaymentTransactionEntity[] }>(
-    TRANSACTIONS_FOR_POST_QUERY,
-    { postId },
-    token,
-  );
+export async function transactionsForPostQuery(token: string, postId: string): Promise<PaymentTransactionEntity[]> {
+  const data = await gqlRequest<{
+    transactionsForPost: PaymentTransactionEntity[];
+  }>(TRANSACTIONS_FOR_POST_QUERY, { postId }, token);
   return data.transactionsForPost;
 }

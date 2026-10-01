@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Link } from 'react-router-dom';
 
 import { PostAuthorMeta } from './PostAuthorMeta';
@@ -5,6 +6,7 @@ import { CategoryList } from './CategoryList';
 import { PostActionsBar } from './PostActionsBar';
 import { Card } from './Card';
 import { paths } from '../lib/paths';
+import { loadPostDetailPage } from '../routes';
 import { PostPaymentStatus } from '../enums/payment-status.enum';
 import type { PostEntity } from '../lib/types';
 
@@ -24,7 +26,9 @@ const PAYMENT_STATUS_LABEL: Record<PostPaymentStatus, string> = {
   [PostPaymentStatus.NotRequired]: '',
 };
 
-export function PostCard({
+// Memoized: feeds append pages with `setItems(prev => [...prev, ...more])`, which keeps existing
+// `post` objects (and the parents' `useCallback` handlers) stable - so already-rendered cards skip.
+export const PostCard = memo(function PostCard({
   post,
   currentUserId,
   onPostChanged,
@@ -38,8 +42,13 @@ export function PostCard({
   const showPaymentBadge = isOwner && post.paymentStatus !== PostPaymentStatus.NotRequired;
 
   return (
-    <Card className="p-6 sm:p-8 transition-all duration-300 hover:shadow-md hover:border-slate-300">
-      <Link to={paths.postDetail(post.id, post.slug)} className="block">
+    <Card className="cv-auto p-6 sm:p-8 transition-all duration-300 hover:shadow-md hover:border-slate-300">
+      <Link
+        to={paths.postDetail(post.id, post.slug)}
+        className="block"
+        onMouseEnter={loadPostDetailPage}
+        onFocus={loadPostDetailPage}
+      >
         <div className="flex justify-between items-start mb-4">
           <PostAuthorMeta
             author={post.author}
@@ -90,4 +99,4 @@ export function PostCard({
       />
     </Card>
   );
-}
+});

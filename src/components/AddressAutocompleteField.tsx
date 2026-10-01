@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { geocodeSearch, type AddressSuggestion } from '../lib/geocode';
 import { MIN_QUERY_LENGTH } from '../lib/search-constants';
@@ -32,7 +32,6 @@ export function AddressAutocompleteField({
   );
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const trimmedCity = city.trim();
 
@@ -41,12 +40,22 @@ export function AddressAutocompleteField({
       return;
     }
 
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      geocodeSearch(trimmedCity).then(setSuggestions);
+    // `cancelled` drops suggestions for text the user has already typed past.
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      try {
+        const results = await geocodeSearch(trimmedCity);
+        if (!cancelled) setSuggestions(results);
+      } catch {
+        // Suggestions are optional - a failed lookup just leaves the free-text field as is.
+        if (!cancelled) setSuggestions([]);
+      }
     }, DEBOUNCE_MS);
 
-    return () => clearTimeout(debounceRef.current);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
   }, [trimmedCity, defaultCity]);
 
   function handleSelect(suggestion: AddressSuggestion) {
@@ -69,6 +78,10 @@ export function AddressAutocompleteField({
           setCity(event.target.value);
           setCoords(undefined);
           setShowSuggestions(true);
+          // Too short to search: drop the old suggestions so they don't reappear once it's long enough.
+          if (event.target.value.trim().length < MIN_QUERY_LENGTH) {
+            setSuggestions([]);
+          }
         }}
         onFocus={() => setShowSuggestions(true)}
         onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}

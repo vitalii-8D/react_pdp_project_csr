@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { postQuery, incrementPostViewCountMutation } from '../lib/graphql/posts';
@@ -10,36 +10,60 @@ import { PostActionsBar } from '../components/PostActionsBar';
 import { CommentList } from '../components/CommentList';
 import { CommentForm } from '../components/CommentForm';
 import { Card } from '../components/Card';
+import { ErrorMessage, PageSkeleton } from '../components/PageStatus';
 import { useAuth } from '../context/AuthContext';
+import { useQuery } from '../hooks/useQuery';
 import { paths } from '../lib/paths';
-import type { CommentEntity, PostEntity } from '../lib/types';
+
+const backLink = (
+  <Link
+    to={paths.posts()}
+    className="inline-flex items-center text-sm font-semibold text-slate-600 hover:text-blue-600 transition-colors"
+  >
+    <Icons.ArrowLeft />
+    Back to posts
+  </Link>
+);
 
 export default function PostDetailPage() {
   const { token, user } = useAuth();
   const { postId = '' } = useParams();
-  const [post, setPost] = useState<PostEntity | undefined>(undefined);
-  const [comments, setComments] = useState<CommentEntity[]>([]);
+  const viewer = token ?? undefined;
 
-  const refetchComments = useCallback(() => {
-    commentsByPostQuery(postId, token ?? undefined).then(setComments);
-  }, [postId, token]);
+  // Post and comments load in parallel and independently - the back link renders immediately.
+  const { data: post, error: postError } = useQuery(`post:${postId}:${token}`, () => postQuery(viewer, postId));
+  const {
+    data: comments,
+    error: commentsError,
+    setData: setComments,
+    refetch: refetchComments,
+  } = useQuery(`comments:${postId}:${token}`, () => commentsByPostQuery(postId, viewer));
 
+  // One view per post visit - kept out of the data queries so logging in on this page (which changes
+  // the token) doesn't count a second view, and guarded so StrictMode's effect re-run doesn't either.
+  const countedPostId = useRef<string | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    postQuery(token ?? undefined, postId).then((fetchedPost) => {
-      if (!cancelled) setPost(fetchedPost);
-    });
-    commentsByPostQuery(postId, token ?? undefined).then((fetchedComments) => {
-      if (!cancelled) setComments(fetchedComments);
-    });
+    if (countedPostId.current === postId) return;
+    countedPostId.current = postId;
     incrementPostViewCountMutation(postId).catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [postId, token]);
+  }, [postId]);
+
+  if (postError) {
+    return (
+      <div className="space-y-6">
+        {backLink}
+        <ErrorMessage message={postError} />
+      </div>
+    );
+  }
 
   if (!post) {
-    return null;
+    return (
+      <div className="space-y-6">
+        {backLink}
+        <PageSkeleton />
+      </div>
+    );
   }
 
   const isOwner = post.author.id === user?.id;
@@ -47,13 +71,7 @@ export default function PostDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link
-        to={paths.posts()}
-        className="inline-flex items-center text-sm font-semibold text-slate-600 hover:text-blue-600 transition-colors"
-      >
-        <Icons.ArrowLeft />
-        Back to posts
-      </Link>
+      {backLink}
 
       <Card className="p-6 sm:p-8">
         <div className="mb-4">
@@ -96,7 +114,7 @@ export default function PostDetailPage() {
           <CommentForm
             postId={post.id}
             submitLabel="Post Comment"
-            onSuccess={(comment) => setComments((prev) => [...prev, comment])}
+            onSuccess={(comment) => setComments((prev) => [...(prev ?? []), comment])}
           />
         )}
 
@@ -109,12 +127,18 @@ export default function PostDetailPage() {
           </p>
         )}
 
-        <CommentList
-          comments={comments}
-          postId={post.id}
-          currentUserId={user?.id}
-          onCommentChanged={refetchComments}
-        />
+        {commentsError ? (
+          <ErrorMessage message={commentsError} />
+        ) : comments ? (
+          <CommentList
+            comments={comments}
+            postId={post.id}
+            currentUserId={user?.id}
+            onCommentChanged={refetchComments}
+          />
+        ) : (
+          <p className="text-sm text-slate-400">Loading comments…</p>
+        )}
       </Card>
     </div>
   );

@@ -18,10 +18,6 @@ export async function generateShareLinksQuery(
   url: string,
   postId?: string,
 ): Promise<ShareLinks> {
-  const data = await gqlRequest<{ generateShareLinks: ShareLinks }>(
-    GENERATE_SHARE_LINKS_QUERY,
-    { url, postId },
-    token,
-  );
+  const data = await gqlRequest<{ generateShareLinks: ShareLinks }>(GENERATE_SHARE_LINKS_QUERY, { url, postId }, token);
   return data.generateShareLinks;
 }

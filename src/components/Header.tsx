@@ -7,6 +7,15 @@ import { buttonStyles } from './Button';
 import { useAuth } from '../context/AuthContext';
 import { avatarUrl } from '../lib/images';
 import { paths } from '../lib/paths';
+import {
+  loadAnalyticsPage,
+  loadChatPage,
+  loadChatV2Page,
+  loadMyPostsPage,
+  loadPostsPage,
+  loadUsersPage,
+  loadProfilePage,
+} from '../routes';
 import { UserRole } from '../enums/user-role.enum';
 import type { UserEntity } from '../lib/types';
 
@@ -40,36 +49,36 @@ export function Header({ user }: { user?: UserEntity | null }) {
           </Link>
 
           <nav className="hidden sm:flex space-x-1 sm:space-x-2">
-            <NavLink to={paths.posts()} isActive={isPosts}>
+            <NavLink to={paths.posts()} isActive={isPosts} preload={loadPostsPage}>
               <Icons.Post />
               <span className="ml-2">Posts</span>
             </NavLink>
             {user && (
-              <NavLink to={paths.myPosts()} isActive={isMyPosts}>
+              <NavLink to={paths.myPosts()} isActive={isMyPosts} preload={loadMyPostsPage}>
                 <Icons.MyPosts />
                 <span className="ml-2">My Posts</span>
               </NavLink>
             )}
             {user && (
-              <NavLink to={paths.chat()} isActive={isChat}>
+              <NavLink to={paths.chat()} isActive={isChat} preload={loadChatPage}>
                 <Icons.Chat />
                 <span className="ml-2">Chat</span>
               </NavLink>
             )}
             {user && (
-              <NavLink to={paths.chatV2()} isActive={isChatV2}>
+              <NavLink to={paths.chatV2()} isActive={isChatV2} preload={loadChatV2Page}>
                 <Icons.Chat />
                 <span className="ml-2">Chat V2</span>
               </NavLink>
             )}
             {user && (
-              <NavLink to={paths.users()} isActive={isUsers}>
+              <NavLink to={paths.users()} isActive={isUsers} preload={loadUsersPage}>
                 <Icons.Users />
                 <span className="ml-2">Users</span>
               </NavLink>
             )}
             {isAdmin && (
-              <NavLink to={paths.analytics()} isActive={isAnalytics}>
+              <NavLink to={paths.analytics()} isActive={isAnalytics} preload={loadAnalyticsPage}>
                 <Icons.Analytics />
                 <span className="ml-2">Analytics</span>
               </NavLink>
@@ -82,6 +91,8 @@ export function Header({ user }: { user?: UserEntity | null }) {
                 <div className="flex items-center space-x-2 pl-2 sm:pl-3 border-l border-slate-200">
                   <Link
                     to={paths.profile()}
+                    onMouseEnter={loadProfilePage}
+                    onFocus={loadProfilePage}
                     title="View profile"
                     className="flex items-center space-x-2 focus:outline-none group focus:ring-2 focus:ring-blue-500 rounded-full p-1"
                   >
@@ -114,41 +125,41 @@ export function Header({ user }: { user?: UserEntity | null }) {
         </div>
 
         <nav className="flex sm:hidden space-x-1 pb-3">
-          <NavLink to={paths.posts()} isActive={isPosts} size="sm">
+          <NavLink to={paths.posts()} isActive={isPosts} preload={loadPostsPage} size="sm">
             <Icons.Post />
             <span className="ml-2">Posts</span>
           </NavLink>
 
           {user && (
-            <NavLink to={paths.myPosts()} isActive={isMyPosts} size="sm">
+            <NavLink to={paths.myPosts()} isActive={isMyPosts} preload={loadMyPostsPage} size="sm">
               <Icons.MyPosts />
               <span className="ml-2">My Posts</span>
             </NavLink>
           )}
 
           {user && (
-            <NavLink to={paths.chat()} isActive={isChat} size="sm">
+            <NavLink to={paths.chat()} isActive={isChat} preload={loadChatPage} size="sm">
               <Icons.Chat />
               <span className="ml-2">Chat</span>
             </NavLink>
           )}
 
           {user && (
-            <NavLink to={paths.chatV2()} isActive={isChatV2} size="sm">
+            <NavLink to={paths.chatV2()} isActive={isChatV2} preload={loadChatV2Page} size="sm">
               <Icons.Chat />
               <span className="ml-2">Chat V2</span>
             </NavLink>
           )}
 
           {user && (
-            <NavLink to={paths.users()} isActive={isUsers} size="sm">
+            <NavLink to={paths.users()} isActive={isUsers} preload={loadUsersPage} size="sm">
               <Icons.Users />
               <span className="ml-2">Users</span>
             </NavLink>
           )}
 
           {isAdmin && (
-            <NavLink to={paths.analytics()} isActive={isAnalytics} size="sm">
+            <NavLink to={paths.analytics()} isActive={isAnalytics} preload={loadAnalyticsPage} size="sm">
               <Icons.Analytics />
               <span className="ml-2">Analytics</span>
             </NavLink>

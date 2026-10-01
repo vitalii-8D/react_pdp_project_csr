@@ -1,45 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loadStripe } from '@stripe/stripe-js';
 
 import { categoriesQuery } from '../lib/graphql/categories';
 import { createPostMutation, parsePostFormInput } from '../lib/graphql/posts';
 import { publishPostMutation } from '../lib/graphql/payments';
-import { getStripePublishableKey } from '../lib/config';
+import { redirectToCheckout } from '../lib/checkout';
+import { errorMessage } from '../lib/error-message';
 import { paths } from '../lib/paths';
 import { PostStatus } from '../enums/post-status.enum';
 import { PostForm } from '../components/PostForm';
 import { useAuth } from '../context/AuthContext';
-import type { CategoryEntity } from '../lib/types';
+import { useQuery } from '../hooks/useQuery';
 
 export default function MyPostsNewPage() {
   const { token } = useAuth();
   const navigate = useNavigate();
-  const [categories, setCategories] = useState<CategoryEntity[]>([]);
+  const { data: categories = [], error: loadError } = useQuery('categories', categoriesQuery);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [checkoutUrl, setCheckoutUrl] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    if (!token) return;
-    categoriesQuery(token).then(setCategories);
-  }, [token]);
-
-  useEffect(() => {
-    if (!checkoutUrl) return;
-    const stripePublishableKey = getStripePublishableKey();
-    if (stripePublishableKey) {
-      void loadStripe(stripePublishableKey);
-    }
-    window.location.href = checkoutUrl;
-  }, [checkoutUrl]);
 
   async function handleSubmit(formData: FormData) {
     if (!token) return;
     setPending(true);
     setError(undefined);
     try {
-      const input = await parsePostFormInput(token, formData);
+      const input = parsePostFormInput(formData, categories);
       const publishing = input.status === PostStatus.PUBLISHED;
 
       const post = await createPostMutation(token, {
@@ -50,14 +35,14 @@ export default function MyPostsNewPage() {
       if (publishing) {
         const result = await publishPostMutation(token, post.id);
         if (result.checkoutUrl) {
-          setCheckoutUrl(result.checkoutUrl);
+          await redirectToCheckout(result.checkoutUrl);
           return;
         }
       }
 
       navigate(paths.myPosts());
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Could not create the post.');
+      setError(errorMessage(submitError, 'Could not create the post.'));
     } finally {
       setPending(false);
     }
@@ -72,7 +57,7 @@ export default function MyPostsNewPage() {
 
       <PostForm
         categories={categories}
-        error={error}
+        error={error ?? loadError}
         pending={pending}
         cancelTo={paths.myPosts()}
         submitLabel="Save Changes"

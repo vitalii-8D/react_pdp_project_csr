@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
@@ -8,6 +8,9 @@ import { paths } from '../lib/paths';
 import { Icons } from '../components/Icons';
 import { Card } from '../components/Card';
 import { Button, buttonStyles } from '../components/Button';
+import { ErrorMessage } from '../components/PageStatus';
+import { useQuery } from '../hooks/useQuery';
+import { errorMessage } from '../lib/error-message';
 import { PaymentTransactionStatus } from '../enums/payment-status.enum';
 import type { PaymentTransactionEntity } from '../lib/types';
 
@@ -26,7 +29,10 @@ const STATUS_LABEL: Record<PaymentTransactionStatus, string> = {
 };
 
 function formatAmount(amount: number, currency: string): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).format(amount / 100);
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+  }).format(amount / 100);
 }
 
 function TransactionRow({
@@ -38,14 +44,18 @@ function TransactionRow({
 }) {
   const { token } = useAuth();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
   const canRefund = transaction.status === PaymentTransactionStatus.Succeeded;
 
   async function handleRefund() {
     if (!token || pending) return;
     setPending(true);
+    setError(undefined);
     try {
       const updated = await refundPaymentMutation(token, transaction.id);
       onRefunded(updated);
+    } catch (refundError) {
+      setError(errorMessage(refundError, 'Could not refund this payment.'));
     } finally {
       setPending(false);
     }
@@ -59,6 +69,7 @@ function TransactionRow({
         {transaction.status === PaymentTransactionStatus.Failed && transaction.failureReason && (
           <p className="text-xs text-red-500 mt-0.5">{transaction.failureReason}</p>
         )}
+        {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
       </div>
       <div className="flex items-center gap-3 shrink-0">
         <span className="text-sm font-bold text-slate-800">
@@ -81,36 +92,39 @@ function TransactionRow({
 
 export default function ProfilePage() {
   const { token, user } = useAuth();
-  const [transactions, setTransactions] = useState<PaymentTransactionEntity[] | null>(null);
-
-  useEffect(() => {
-    if (!token) return;
-    myTransactionsQuery(token).then(setTransactions);
-  }, [token]);
+  const {
+    data: transactions,
+    error,
+    setData: setTransactions,
+  } = useQuery(token ? 'my-transactions' : null, () => myTransactionsQuery(token ?? ''));
 
   function handleRefunded(updated: PaymentTransactionEntity) {
-    setTransactions((prev) => prev?.map((t) => (t.id === updated.id ? updated : t)) ?? prev);
+    setTransactions((prev) => prev?.map((t) => (t.id === updated.id ? updated : t)));
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (
     <div className="max-w-xl space-y-6">
       <Card className="p-8 text-center">
         <img
-          src={user!.avatar?.url ?? avatarUrl(user!.id)}
-          alt={user!.name}
+          src={user.avatar?.url ?? avatarUrl(user.id)}
+          alt={user.name}
           className="h-24 w-24 rounded-full object-cover mx-auto ring-4 ring-blue-50"
         />
-        <h1 className="text-2xl font-black text-slate-900 mt-4">{user!.name}</h1>
-        <p className="text-slate-500">{user!.email}</p>
+        <h1 className="text-2xl font-black text-slate-900 mt-4">{user.name}</h1>
+        <p className="text-slate-500">{user.email}</p>
 
         <dl className="mt-6 grid grid-cols-2 gap-4 text-left">
           <div className="bg-slate-50 rounded-xl p-4">
             <dt className="text-xs font-semibold text-slate-400 uppercase">Age</dt>
-            <dd className="text-sm font-bold text-slate-800 mt-1">{user!.age ?? '—'}</dd>
+            <dd className="text-sm font-bold text-slate-800 mt-1">{user.age ?? '—'}</dd>
           </div>
           <div className="bg-slate-50 rounded-xl p-4">
             <dt className="text-xs font-semibold text-slate-400 uppercase">Role</dt>
-            <dd className="text-sm font-bold text-slate-800 mt-1 capitalize">{user!.role.toLowerCase()}</dd>
+            <dd className="text-sm font-bold text-slate-800 mt-1 capitalize">{user.role.toLowerCase()}</dd>
           </div>
         </dl>
 
@@ -122,7 +136,9 @@ export default function ProfilePage() {
 
       <Card className="p-8">
         <h2 className="text-lg font-black text-slate-900 mb-4">Transactions</h2>
-        {!transactions || transactions.length === 0 ? (
+        {error ? (
+          <ErrorMessage message={error} />
+        ) : !transactions || transactions.length === 0 ? (
           <p className="text-slate-400 text-sm">{transactions ? 'No payments yet.' : 'Loading…'}</p>
         ) : (
           <div>

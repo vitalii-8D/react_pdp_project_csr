@@ -1,59 +1,52 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { loadStripe } from '@stripe/stripe-js';
+import { useState } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 
 import { categoriesQuery } from '../lib/graphql/categories';
 import { postQuery, updatePostMutation, parsePostFormInput } from '../lib/graphql/posts';
 import { publishPostMutation } from '../lib/graphql/payments';
-import { getStripePublishableKey } from '../lib/config';
+import { redirectToCheckout } from '../lib/checkout';
+import { errorMessage } from '../lib/error-message';
 import { paths } from '../lib/paths';
 import { PostStatus } from '../enums/post-status.enum';
 import { PostForm } from '../components/PostForm';
+import { ErrorMessage, PageSkeleton } from '../components/PageStatus';
 import { useAuth } from '../context/AuthContext';
-import type { CategoryEntity, PostEntity } from '../lib/types';
+import { useQuery } from '../hooks/useQuery';
 
 export default function MyPostEditPage() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
   const { postId = '' } = useParams();
-  const [post, setPost] = useState<PostEntity | undefined>(undefined);
-  const [categories, setCategories] = useState<CategoryEntity[]>([]);
+  const {
+    data,
+    error: loadError,
+    isLoading,
+  } = useQuery(token ? `post-edit:${postId}` : null, () =>
+    Promise.all([postQuery(token ?? undefined, postId), categoriesQuery()]),
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [checkoutUrl, setCheckoutUrl] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
-    if (!token || !user) return;
-    let cancelled = false;
-    Promise.all([postQuery(token, postId), categoriesQuery(token)]).then(([fetchedPost, cats]) => {
-      if (cancelled) return;
-      if (fetchedPost.author.id !== user.id) {
-        navigate(paths.myPosts());
-        return;
-      }
-      setPost(fetchedPost);
-      setCategories(cats);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, user, postId, navigate]);
+  if (loadError) {
+    return <ErrorMessage message={loadError} />;
+  }
 
-  useEffect(() => {
-    if (!checkoutUrl) return;
-    const stripePublishableKey = getStripePublishableKey();
-    if (stripePublishableKey) {
-      void loadStripe(stripePublishableKey);
-    }
-    window.location.href = checkoutUrl;
-  }, [checkoutUrl]);
+  if (isLoading || !data || !user) {
+    return <PageSkeleton />;
+  }
+
+  const [post, categories] = data;
+
+  if (post.author.id !== user.id) {
+    return <Navigate to={paths.myPosts()} replace />;
+  }
 
   async function handleSubmit(formData: FormData) {
     if (!token) return;
     setPending(true);
     setError(undefined);
     try {
-      const input = await parsePostFormInput(token, formData);
+      const input = parsePostFormInput(formData, categories);
       const publishing = input.status === PostStatus.PUBLISHED;
 
       await updatePostMutation(token, {
@@ -65,21 +58,17 @@ export default function MyPostEditPage() {
       if (publishing) {
         const result = await publishPostMutation(token, postId);
         if (result.checkoutUrl) {
-          setCheckoutUrl(result.checkoutUrl);
+          await redirectToCheckout(result.checkoutUrl);
           return;
         }
       }
 
       navigate(paths.myPosts());
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Could not update the post.');
+      setError(errorMessage(submitError, 'Could not update the post.'));
     } finally {
       setPending(false);
     }
-  }
-
-  if (!post) {
-    return null;
   }
 
   return (

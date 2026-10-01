@@ -1,40 +1,38 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import { transactionsForPostQuery } from '../lib/graphql/payments';
 import { PaymentTransactionStatus } from '../enums/payment-status.enum';
 import { paths } from '../lib/paths';
 import { Card } from '../components/Card';
 import { buttonStyles } from '../components/Button';
+import { ErrorMessage, PageSkeleton } from '../components/PageStatus';
 import { useAuth } from '../context/AuthContext';
+import { useQuery } from '../hooks/useQuery';
 
 export default function PaymentsSuccessPage() {
   const { token } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const postId = searchParams.get('postId');
 
-  const [status, setStatus] = useState<PaymentTransactionStatus | null>(null);
-  const [failureReason, setFailureReason] = useState<string | null | undefined>(undefined);
-  const [loaded, setLoaded] = useState(false);
+  const { data: transactions, error } = useQuery(token && postId ? `transactions:${postId}` : null, () =>
+    transactionsForPostQuery(token ?? '', postId ?? ''),
+  );
 
-  useEffect(() => {
-    if (!postId) {
-      navigate(paths.myPosts());
-      return;
-    }
-    if (!token) return;
-    transactionsForPostQuery(token, postId).then((transactions) => {
-      const latestTransaction = transactions[0];
-      setStatus(latestTransaction?.status ?? null);
-      setFailureReason(latestTransaction?.failureReason);
-      setLoaded(true);
-    });
-  }, [postId, token, navigate]);
-
-  if (!postId || !loaded) {
-    return null;
+  if (!postId) {
+    return <Navigate to={paths.myPosts()} replace />;
   }
+
+  if (error) {
+    return <ErrorMessage message={error} />;
+  }
+
+  if (!transactions) {
+    return <PageSkeleton />;
+  }
+
+  const latestTransaction = transactions[0];
+  const status = latestTransaction?.status ?? null;
+  const failureReason = latestTransaction?.failureReason;
 
   return (
     <div className="max-w-xl mx-auto">

@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { myPostsQuery } from '../lib/graphql/posts';
@@ -7,21 +6,17 @@ import { PostCard } from '../components/PostCard';
 import { Icons } from '../components/Icons';
 import { Card } from '../components/Card';
 import { buttonStyles } from '../components/Button';
+import { ErrorMessage, PageSkeleton } from '../components/PageStatus';
 import { useAuth } from '../context/AuthContext';
-import type { PostEntity } from '../lib/types';
+import { useQuery } from '../hooks/useQuery';
 
 export default function MyPostsPage() {
   const { token, user } = useAuth();
-  const [posts, setPosts] = useState<PostEntity[]>([]);
-
-  const refetchPosts = useCallback(() => {
-    if (!token) return;
-    myPostsQuery(token).then(setPosts);
-  }, [token]);
-
-  useEffect(() => {
-    refetchPosts();
-  }, [refetchPosts]);
+  const {
+    data: posts,
+    error,
+    refetch: refetchPosts,
+  } = useQuery(token ? 'my-posts' : null, () => myPostsQuery(token ?? ''));
 
   return (
     <div className="space-y-6">
@@ -36,7 +31,11 @@ export default function MyPostsPage() {
         </Link>
       </div>
 
-      {posts.length === 0 ? (
+      {error ? (
+        <ErrorMessage message={error} />
+      ) : !posts ? (
+        <PageSkeleton />
+      ) : posts.length === 0 ? (
         <Card className="p-12 text-center">
           <p className="text-slate-400 text-lg">You haven&apos;t written any posts yet.</p>
           <Link to={paths.myPostsNew()} className={buttonStyles({ size: 'lg', className: 'mt-4' })}>

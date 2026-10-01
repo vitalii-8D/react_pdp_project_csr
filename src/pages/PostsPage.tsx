@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { searchPostsQuery } from '../lib/graphql/posts';
@@ -8,9 +8,12 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { TextField } from '../components/TextField';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
+import { ErrorMessage, PageSkeleton } from '../components/PageStatus';
 import { useAuth } from '../context/AuthContext';
+import { useQuery } from '../hooks/useQuery';
+import { errorMessage } from '../lib/error-message';
 import { MIN_QUERY_LENGTH } from '../lib/search-constants';
-import type { CategoryEntity, PostEntity, SearchPostsInput, SearchPostsResult } from '../lib/types';
+import type { PostEntity, SearchPostsInput, SearchPostsResult } from '../lib/types';
 
 const READING_TIME_BUCKETS = [
   { label: 'Any length', value: '' },
@@ -25,14 +28,17 @@ export default function PostsPage() {
   const q = searchParams.get('q') ?? '';
   const isQueryTooShort = q.length > 0 && q.length < MIN_QUERY_LENGTH;
   const categories = searchParams.getAll('category');
+  const selectedCategories = new Set(categories);
   const from = searchParams.get('from') ?? '';
   const to = searchParams.get('to') ?? '';
   const maxReading = searchParams.get('maxReading') ?? '';
 
-  const [allCategories, setAllCategories] = useState<CategoryEntity[]>([]);
+  const { data: allCategories = [] } = useQuery('categories', categoriesQuery);
   const [items, setItems] = useState<PostEntity[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null | undefined>(undefined);
+  const [isSearching, setIsSearching] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
 
   const [queryDraft, setQueryDraft] = useState(q);
   const trimmedQueryDraft = queryDraft.trim();
@@ -41,10 +47,15 @@ export default function PostsPage() {
   const baseInput: SearchPostsInput = {
     ...(q && { query: q }),
     ...(categories.length > 0 && { categories }),
-    ...((from || to) && { createdAt: { ...(from && { from }), ...(to && { to }) } }),
+    ...((from || to) && {
+      createdAt: { ...(from && { from }), ...(to && { to }) },
+    }),
     ...(maxReading && { readingTime: { max: Number(maxReading) } }),
   };
-  const baseKey = JSON.stringify(baseInput);
+  const requestKey = `${JSON.stringify(baseInput)}:${token}`;
+  // The filters the list currently reflects. Responses (initial, refetch or next page) that were
+  // requested for other filters are dropped instead of overwriting or mixing into the list.
+  const activeRequestKey = useRef(requestKey);
 
   // A too-short `q` (e.g. typed straight into the URL) skips the search entirely instead of
   // sending a query the backend would reject or match too broadly.
@@ -54,40 +65,41 @@ export default function PostsPage() {
       : searchPostsQuery(token ?? undefined, input);
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([searchPosts(baseInput), categoriesQuery(token ?? undefined)]).then(([result, cats]) => {
-      if (cancelled) return;
-      setItems(result.items);
+  async function runSearch(input: SearchPostsInput, append: boolean) {
+    const key = requestKey;
+    try {
+      const result = await searchPosts(input);
+      if (activeRequestKey.current !== key) return;
+      setItems((prev) => (append ? [...prev, ...result.items] : result.items));
       setNextCursor(result.nextCursor);
-      setAllCategories(cats);
+    } catch (searchError: unknown) {
+      if (activeRequestKey.current !== key) return;
+      setError(errorMessage(searchError, 'Could not load posts.'));
+    }
+  }
+
+  useEffect(() => {
+    activeRequestKey.current = requestKey;
+    setError(undefined);
+    setIsSearching(true);
+    runSearch(baseInput, false).finally(() => {
+      if (activeRequestKey.current === requestKey) setIsSearching(false);
     });
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseKey, token]);
+  }, [requestKey]);
 
   const refetch = useCallback(() => {
-    searchPosts(baseInput).then((result) => {
-      setItems(result.items);
-      setNextCursor(result.nextCursor);
-    });
+    void runSearch(baseInput, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseKey, token]);
+  }, [requestKey]);
 
-  const canLoadMore = Boolean(nextCursor) && !isLoadingMore;
+  const canLoadMore = Boolean(nextCursor) && !isLoadingMore && !isSearching;
   const loadMore = useCallback(() => {
     if (!nextCursor || isLoadingMore) return;
     setIsLoadingMore(true);
-    searchPostsQuery(token ?? undefined, { ...baseInput, cursor: nextCursor })
-      .then((result) => {
-        setItems((prev) => [...prev, ...result.items]);
-        setNextCursor(result.nextCursor);
-      })
-      .finally(() => setIsLoadingMore(false));
+    runSearch({ ...baseInput, cursor: nextCursor }, true).finally(() => setIsLoadingMore(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextCursor, isLoadingMore, baseKey, token]);
+  }, [nextCursor, isLoadingMore, requestKey]);
   const sentinelRef = useInfiniteScroll(loadMore, canLoadMore);
 
   function handleFilterSubmit(event: FormEvent<HTMLFormElement>) {
@@ -172,7 +184,7 @@ export default function PostsPage() {
                       type="checkbox"
                       name="category"
                       value={category.name}
-                      defaultChecked={categories.includes(category.name)}
+                      defaultChecked={selectedCategories.has(category.name)}
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     {category.name}
@@ -184,7 +196,11 @@ export default function PostsPage() {
         </form>
       </Card>
 
-      {items.length === 0 ? (
+      {error ? (
+        <ErrorMessage message={error} />
+      ) : isSearching && items.length === 0 ? (
+        <PageSkeleton />
+      ) : items.length === 0 ? (
         <Card className="p-12 text-center">
           <p className="text-slate-400 text-lg">
             {isQueryTooShort

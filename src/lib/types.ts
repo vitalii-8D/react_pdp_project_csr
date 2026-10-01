@@ -59,7 +59,10 @@ export interface PostEntity {
   postImage?: PostImageEntity | null;
   // Only `image`/`imageAlt` are used (as the post's cover image) — the rest of this backend
   // entity (title/description/tags/etc.) exists purely for SEO <meta> tags, dropped in this CSR app.
-  openGraphMetadata?: { image?: string | null; imageAlt?: string | null } | null;
+  openGraphMetadata?: {
+    image?: string | null;
+    imageAlt?: string | null;
+  } | null;
 }
 
 export interface PaymentTransactionEntity {

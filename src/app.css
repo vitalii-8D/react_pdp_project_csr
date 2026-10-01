@@ -5,6 +5,17 @@
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
+/* Lets the browser skip layout/paint for off-screen items in long, growing lists. */
+@utility cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 320px;
+}
+
+@utility cv-auto-sm {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 72px;
+}
+
 html,
 body {
   @apply bg-slate-50;

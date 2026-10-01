@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { createClient, type Client } from 'graphql-ws';
+import { useEffect, useState, type FormEvent } from 'react';
+import { createClient } from 'graphql-ws';
 
 import {
   CHAT_MESSAGE_ADDED_SUBSCRIPTION,
@@ -37,7 +37,6 @@ export function ChatWindowV2({
     : undefined;
   const displayName = otherParticipant?.name ?? room.name;
 
-  const clientRef = useRef<Client | null>(null);
   const [messages, setMessages] = useState<ChatMessageEntity[]>(initialMessages);
   const [connected, setConnected] = useState(false);
   const [presence, setPresence] = useState<string | null>(null);
@@ -47,6 +46,9 @@ export function ChatWindowV2({
   const [broadcastDraft, setBroadcastDraft] = useState('');
   const [broadcasting, setBroadcasting] = useState(false);
 
+  // One effect owns the whole connection: create the client, subscribe to the room, and dispose of
+  // everything together. The window is keyed by room (see ChatV2RoomPage), and the handlers only
+  // call state setters, so there are no changing callbacks to keep in refs.
   useEffect(() => {
     const client = createClient({
       url: graphqlWsUrl,
@@ -56,23 +58,8 @@ export function ChatWindowV2({
         closed: () => setConnected(false),
       },
     });
-    clientRef.current = client;
-
-    return () => {
-      void client.dispose();
-      clientRef.current = null;
-    };
-  }, [graphqlWsUrl, token]);
-
-  useEffect(() => {
-    const client = clientRef.current;
-    setMessages(initialMessages);
-    setPresence(null);
-    setError(null);
-
-    if (!client) {
-      return;
-    }
+    const handleSubscriptionError = (err: unknown) =>
+      setError(err instanceof Error ? err.message : 'Subscription error.');
 
     const unsubscribeMessages = client.subscribe<{
       chatMessageAdded: Omit<ChatMessageEntity, 'attachments'>;
@@ -87,7 +74,7 @@ export function ChatWindowV2({
             setMessages((prev) => [...prev, { ...data.chatMessageAdded, attachments: [] }]);
           }
         },
-        error: (err) => setError(err instanceof Error ? err.message : 'Subscription error.'),
+        error: handleSubscriptionError,
         complete: () => {},
       },
     );
@@ -107,7 +94,7 @@ export function ChatWindowV2({
           const { type, userName } = data.chatRoomPresence;
           setPresence(`${userName} ${type === 'JOINED' ? 'joined' : 'left'} the room`);
         },
-        error: (err) => setError(err instanceof Error ? err.message : 'Subscription error.'),
+        error: handleSubscriptionError,
         complete: () => {},
       },
     );
@@ -115,8 +102,9 @@ export function ChatWindowV2({
     return () => {
       unsubscribeMessages();
       unsubscribePresence();
+      void client.dispose();
     };
-  }, [room.id]);
+  }, [graphqlWsUrl, token, room.id]);
 
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -187,7 +175,7 @@ export function ChatWindowV2({
           messages.map((message) => {
             const isOwn = message.userId === currentUserId;
             return (
-              <div key={message.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+              <div key={message.id} className={`cv-auto-sm flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
                 <div
                   className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
                     message.isAdminBroadcast

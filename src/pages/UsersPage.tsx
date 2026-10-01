@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +10,8 @@ import { MIN_QUERY_LENGTH } from '../lib/search-constants';
 import { Card } from '../components/Card';
 import { TextField } from '../components/TextField';
 import { buttonStyles } from '../components/Button';
+import { ErrorMessage, PageSkeleton } from '../components/PageStatus';
+import { errorMessage } from '../lib/error-message';
 import type { SearchUsersInput, SearchUsersResult, UserEntity } from '../lib/types';
 
 const RADIUS_OPTIONS = [
@@ -36,55 +38,66 @@ export default function UsersPage() {
   const q = searchParams.get('q') ?? '';
   const isQueryTooShort = q.length > 0 && q.length < MIN_QUERY_LENGTH;
   const radiusKm = searchParams.get('radiusKm') ?? '';
-  const hasLocation = user!.latitude != null && user!.longitude != null;
+  const hasLocation = user?.latitude != null && user?.longitude != null;
 
   const [items, setItems] = useState<UserEntity[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null | undefined>(undefined);
+  const [isSearching, setIsSearching] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
 
   const [queryDraft, setQueryDraft] = useState(q);
   const trimmedQueryDraft = queryDraft.trim();
   const isSearchDisabled = trimmedQueryDraft.length > 0 && trimmedQueryDraft.length < MIN_QUERY_LENGTH;
 
+  const baseInput: SearchUsersInput = {
+    ...(q && { query: q }),
+    ...(radiusKm && hasLocation && { useMyLocation: true, radiusKm: Number(radiusKm) }),
+  };
+  const requestKey = `${JSON.stringify(baseInput)}:${token}`;
+  // The search the list currently reflects - responses for an older search (or a next page that
+  // was requested before the filters changed) are dropped.
+  const activeRequestKey = useRef(requestKey);
+
+  async function runSearch(input: SearchUsersInput, append: boolean): Promise<void> {
+    if (!token) return;
+    const key = requestKey;
+    try {
+      const result: SearchUsersResult = await searchUsersFullQuery(token, input);
+      if (activeRequestKey.current !== key) return;
+      setItems((prev) => (append ? [...prev, ...result.items] : result.items));
+      setNextCursor(result.nextCursor);
+    } catch (searchError: unknown) {
+      if (activeRequestKey.current !== key) return;
+      setError(errorMessage(searchError, 'Could not load users.'));
+    }
+  }
+
   useEffect(() => {
+    activeRequestKey.current = requestKey;
     if (!token) return;
 
+    setError(undefined);
     if (isQueryTooShort) {
       setItems([]);
       setNextCursor(null);
+      setIsSearching(false);
       return;
     }
 
     const cursor = searchParams.get('cursor');
-    const input: SearchUsersInput = {
-      ...(q && { query: q }),
-      ...(radiusKm && hasLocation && { useMyLocation: true, radiusKm: Number(radiusKm) }),
-      ...(decodeCursor(cursor) && { cursor: cursor! }),
-    };
-
-    searchUsersFullQuery(token, input).then((result: SearchUsersResult) => {
-      setItems(result.items);
-      setNextCursor(result.nextCursor);
+    setIsSearching(true);
+    runSearch({ ...baseInput, ...(decodeCursor(cursor) && { cursor: cursor! }) }, false).finally(() => {
+      if (activeRequestKey.current === requestKey) setIsSearching(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, q, radiusKm]);
+  }, [requestKey, isQueryTooShort]);
 
-  const canLoadMore = Boolean(nextCursor) && !isLoadingMore;
-  const loadMore = async () => {
-    if (!token || !nextCursor || isLoadingMore) return;
+  const canLoadMore = Boolean(nextCursor) && !isLoadingMore && !isSearching;
+  const loadMore = () => {
+    if (!nextCursor || isLoadingMore) return;
     setIsLoadingMore(true);
-    try {
-      const input: SearchUsersInput = {
-        ...(q && { query: q }),
-        ...(radiusKm && hasLocation && { useMyLocation: true, radiusKm: Number(radiusKm) }),
-        cursor: nextCursor,
-      };
-      const result = await searchUsersFullQuery(token, input);
-      setItems((prev) => [...prev, ...result.items]);
-      setNextCursor(result.nextCursor);
-    } finally {
-      setIsLoadingMore(false);
-    }
+    runSearch({ ...baseInput, cursor: nextCursor }, true).finally(() => setIsLoadingMore(false));
   };
   const sentinelRef = useInfiniteScroll(loadMore, canLoadMore);
 
@@ -153,7 +166,11 @@ export default function UsersPage() {
         )}
       </Card>
 
-      {items.length === 0 ? (
+      {error ? (
+        <ErrorMessage message={error} />
+      ) : isSearching && items.length === 0 ? (
+        <PageSkeleton />
+      ) : items.length === 0 ? (
         <Card className="p-12 text-center">
           <p className="text-slate-400 text-lg">
             {isQueryTooShort ? `Type at least ${MIN_QUERY_LENGTH} characters to search.` : 'No users found.'}
@@ -162,7 +179,7 @@ export default function UsersPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {items.map((item) => (
-            <Card key={item.id} className="p-5 flex items-center space-x-4">
+            <Card key={item.id} className="cv-auto-sm p-5 flex items-center space-x-4">
               <div className="relative shrink-0">
                 <img
                   className="h-12 w-12 rounded-full object-cover ring-2 ring-slate-100"

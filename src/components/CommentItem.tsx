@@ -5,6 +5,7 @@ import { avatarUrl } from '../lib/images';
 import { formatDate } from '../lib/format';
 import { useAuth } from '../context/AuthContext';
 import { removeCommentMutation } from '../lib/graphql/comments';
+import { errorMessage } from '../lib/error-message';
 import { Icons } from './Icons';
 import { Button } from './Button';
 import { StarRating } from './StarRating';
@@ -23,6 +24,7 @@ export function CommentItem({ comment, postId, currentUserId, onDeleted, onUpdat
   const { token } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
   const isOwnComment = comment.author.id === currentUserId;
 
   if (isEditing) {
@@ -83,6 +85,7 @@ export function CommentItem({ comment, postId, currentUserId, onDeleted, onUpdat
       </div>
 
       <p className="text-sm text-slate-600 mt-2 whitespace-pre-line">{comment.content}</p>
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
 
       <ConfirmDialog
         open={confirmOpen}
@@ -93,7 +96,13 @@ export function CommentItem({ comment, postId, currentUserId, onDeleted, onUpdat
         onConfirm={async () => {
           setConfirmOpen(false);
           if (!token) return;
-          await removeCommentMutation(token, comment.id);
+          setError(undefined);
+          try {
+            await removeCommentMutation(token, comment.id);
+          } catch (deleteError) {
+            setError(errorMessage(deleteError, 'Could not delete the comment.'));
+            return;
+          }
           onDeleted?.(comment.id);
         }}
       />

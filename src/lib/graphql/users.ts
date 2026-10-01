@@ -20,20 +20,6 @@ const USER_FIELDS = /* GraphQL */ `
   }
 `;
 
-const ME_QUERY = /* GraphQL */ `
-  ${USER_FIELDS}
-  query Me {
-    me {
-      ...UserFields
-    }
-  }
-`;
-
-export async function meQuery(token: string): Promise<UserEntity> {
-  const data = await gqlRequest<{ me: UserEntity }>(ME_QUERY, undefined, token);
-  return data.me;
-}
-
 export interface UserAvatarDetails {
   id: string;
   key: string;
@@ -43,46 +29,56 @@ export interface UserAvatarDetails {
   sizeBytes: number;
 }
 
-const ME_WITH_AVATAR_QUERY = /* GraphQL */ `
+// The signed-in user carries the full avatar record (the profile edit form needs key/mime/size to
+// keep the current image), so both `me` and `login` select it - AuthContext is then the single
+// source of the current user and no page has to fetch it again.
+export type CurrentUser = UserEntity & { avatar?: UserAvatarDetails | null };
+
+const CURRENT_USER_FIELDS = /* GraphQL */ `
   ${USER_FIELDS}
-  query MeWithAvatar {
-    me {
-      ...UserFields
-      avatar {
-        id
-        key
-        url
-        originalFileName
-        mimeType
-        sizeBytes
-      }
+  fragment CurrentUserFields on UserEntity {
+    ...UserFields
+    avatar {
+      id
+      key
+      url
+      originalFileName
+      mimeType
+      sizeBytes
     }
   }
 `;
 
-export async function meWithAvatarQuery(token: string): Promise<UserEntity & { avatar?: UserAvatarDetails | null }> {
-  const data = await gqlRequest<{ me: UserEntity & { avatar?: UserAvatarDetails | null } }>(
-    ME_WITH_AVATAR_QUERY,
-    undefined,
-    token,
-  );
+const ME_QUERY = /* GraphQL */ `
+  ${CURRENT_USER_FIELDS}
+  query Me {
+    me {
+      ...CurrentUserFields
+    }
+  }
+`;
+
+export async function meQuery(token: string): Promise<CurrentUser> {
+  const data = await gqlRequest<{ me: CurrentUser }>(ME_QUERY, undefined, token);
   return data.me;
 }
 
 const LOGIN_MUTATION = /* GraphQL */ `
-  ${USER_FIELDS}
+  ${CURRENT_USER_FIELDS}
   mutation Login($loginInput: LoginInput!) {
     login(loginInput: $loginInput) {
       accessToken
       user {
-        ...UserFields
+        ...CurrentUserFields
       }
     }
   }
 `;
 
-export async function loginMutation(email: string, password: string): Promise<AuthResponse> {
-  const data = await gqlRequest<{ login: AuthResponse }>(LOGIN_MUTATION, {
+export async function loginMutation(email: string, password: string): Promise<AuthResponse & { user: CurrentUser }> {
+  const data = await gqlRequest<{
+    login: AuthResponse & { user: CurrentUser };
+  }>(LOGIN_MUTATION, {
     loginInput: { email, password },
   });
   return data.login;
@@ -182,11 +178,7 @@ const UPDATE_USER_MUTATION = /* GraphQL */ `
 `;
 
 export async function updateUserMutation(token: string, input: UpdateUserInput): Promise<UserEntity> {
-  const data = await gqlRequest<{ updateUser: UserEntity }>(
-    UPDATE_USER_MUTATION,
-    { updateUserInput: input },
-    token,
-  );
+  const data = await gqlRequest<{ updateUser: UserEntity }>(UPDATE_USER_MUTATION, { updateUserInput: input }, token);
   return data.updateUser;
 }
 

@@ -1,48 +1,32 @@
-import { useEffect, useState } from 'react';
-
 import { useAuth } from '../context/AuthContext';
 import { chatRoomQuery } from '../lib/graphql/chat';
-import { GqlRequestError } from '../lib/graphql-client';
 import { UserRole } from '../enums/user-role.enum';
-import type { ChatMessageEntity, ChatRoomEntity } from '../lib/types';
+import { useQuery } from './useQuery';
+import type { ChatMessageEntity } from '../lib/types';
 
 type LoadMessages = (token: string, roomId: string) => Promise<ChatMessageEntity[]>;
 
+const NO_MESSAGES: ChatMessageEntity[] = [];
+
 // Shared by ChatRoomPage and ChatV2RoomPage: loading the room and its history is identical for
 // both transports, except for which messages query runs (Chat V2's omits attachments).
+//
+// History always comes from this HTTP query, including for Socket.IO chat: the socket's
+// `joinedRoom` payload also carries messages, but the backend loads them without attachments.
 export function useChatRoom(roomId: string | undefined, loadMessages: LoadMessages) {
   const { token, user } = useAuth();
-  const [room, setRoom] = useState<ChatRoomEntity | null>(null);
-  const [messages, setMessages] = useState<ChatMessageEntity[]>([]);
-  const [error, setError] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
-    if (!token || !roomId) return;
-
-    setError(undefined);
-    setRoom(null);
-
-    // Messages are loaded before the room is set so the chat window mounts with its history
-    // already in place - it only reads `messages` as initial state.
-    Promise.all([chatRoomQuery(token, roomId), loadMessages(token, roomId)])
-      .then(([loadedRoom, loadedMessages]) => {
-        setMessages(loadedMessages);
-        setRoom(loadedRoom);
-      })
-      .catch((err) => {
-        if (err instanceof GqlRequestError) {
-          setError(err.message);
-          return;
-        }
-        throw err;
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, roomId]);
+  // Messages are loaded together with the room so the chat window mounts with its history
+  // already in place - it only reads `messages` as initial state. Switching rooms changes the key,
+  // which drops any response still in flight for the previous room.
+  const { data, error } = useQuery(token && roomId ? `chat-room:${roomId}` : null, () =>
+    Promise.all([chatRoomQuery(token ?? '', roomId ?? ''), loadMessages(token ?? '', roomId ?? '')]),
+  );
 
   return {
     token,
-    room,
-    messages,
+    room: data?.[0] ?? null,
+    messages: data?.[1] ?? NO_MESSAGES,
     error,
     currentUserId: user?.id,
     isAdmin: user?.role === UserRole.ADMIN,

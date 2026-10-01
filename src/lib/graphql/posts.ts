@@ -1,8 +1,7 @@
 import { gqlRequest } from '../graphql-client';
 import { PostFormField } from '../../enums/post-form-field.enum';
 import { PostStatus } from '../../enums/post-status.enum';
-import { categoriesQuery } from './categories';
-import type { PostEntity, SearchPostsInput, SearchPostsResult } from '../types';
+import type { CategoryEntity, PostEntity, SearchPostsInput, SearchPostsResult } from '../types';
 
 const POST_FIELDS = /* GraphQL */ `
   fragment PostFields on PostEntity {
@@ -105,10 +104,7 @@ const SEARCH_POSTS_QUERY = /* GraphQL */ `
   }
 `;
 
-export async function searchPostsQuery(
-  token: string | undefined,
-  input: SearchPostsInput,
-): Promise<SearchPostsResult> {
+export async function searchPostsQuery(token: string | undefined, input: SearchPostsInput): Promise<SearchPostsResult> {
   const data = await gqlRequest<{ searchPosts: SearchPostsResult }>(SEARCH_POSTS_QUERY, { input }, token);
   return data.searchPosts;
 }
@@ -146,7 +142,9 @@ export interface ParsedPostFormInput {
   image?: PostImageInput;
 }
 
-export async function parsePostFormInput(token: string, formData: FormData): Promise<ParsedPostFormInput> {
+// `allCategories` is the list the form was rendered with - it maps the selected ids to tag names
+// without another round-trip on the submit path.
+export function parsePostFormInput(formData: FormData, allCategories: CategoryEntity[]): ParsedPostFormInput {
   const title = String(formData.get(PostFormField.Title) ?? '');
   const content = String(formData.get(PostFormField.Content) ?? '');
   const slug = String(formData.get(PostFormField.Slug) ?? '');
@@ -169,9 +167,9 @@ export async function parsePostFormInput(token: string, formData: FormData): Pro
 
   let metadata: { tags: string[] } | undefined;
   if (categoryIds.length > 0) {
-    const allCategories = await categoriesQuery(token);
+    const selectedIds = new Set(categoryIds);
     const tags = allCategories
-      .filter((category) => categoryIds.includes(category.id))
+      .filter((category) => selectedIds.has(category.id))
       .map((category) => category.name.toLowerCase());
     metadata = { tags };
   }
@@ -189,11 +187,7 @@ const CREATE_POST_MUTATION = /* GraphQL */ `
 `;
 
 export async function createPostMutation(token: string, input: CreatePostInput): Promise<PostEntity> {
-  const data = await gqlRequest<{ createPost: PostEntity }>(
-    CREATE_POST_MUTATION,
-    { createPostInput: input },
-    token,
-  );
+  const data = await gqlRequest<{ createPost: PostEntity }>(CREATE_POST_MUTATION, { createPostInput: input }, token);
   return data.createPost;
 }
 
@@ -207,11 +201,7 @@ const UPDATE_POST_MUTATION = /* GraphQL */ `
 `;
 
 export async function updatePostMutation(token: string, input: UpdatePostInput): Promise<PostEntity> {
-  const data = await gqlRequest<{ updatePost: PostEntity }>(
-    UPDATE_POST_MUTATION,
-    { updatePostInput: input },
-    token,
-  );
+  const data = await gqlRequest<{ updatePost: PostEntity }>(UPDATE_POST_MUTATION, { updatePostInput: input }, token);
   return data.updatePost;
 }
 

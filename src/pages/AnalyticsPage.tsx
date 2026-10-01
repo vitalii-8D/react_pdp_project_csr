@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -23,13 +22,8 @@ import {
   commentRatingDistributionQuery,
 } from '../lib/graphql/comments';
 import { Card } from '../components/Card';
-import type {
-  AnalyticsDashboard,
-  CommentsPerPeriodStat,
-  CommentsPerPostStat,
-  CommentsPerUserStat,
-  RatingDistributionStat,
-} from '../lib/types';
+import { ErrorMessage, PageSkeleton } from '../components/PageStatus';
+import { useQuery } from '../hooks/useQuery';
 
 const SEQUENTIAL_BLUE = '#2a78d6';
 const DIVERGING_BLUE = '#2a78d6';
@@ -38,7 +32,13 @@ const STATUS_GOOD = '#0ca30c';
 const MUTED = '#898781';
 const GRID_COLOR = '#e1e0d9';
 const AXIS_COLOR = '#c3c2b7';
-const RATING_RAMP: Record<number, string> = { 1: '#86b6ef', 2: '#6da7ec', 3: '#5598e7', 4: '#3987e5', 5: '#2a78d6' };
+const RATING_RAMP: Record<number, string> = {
+  1: '#86b6ef',
+  2: '#6da7ec',
+  3: '#5598e7',
+  4: '#3987e5',
+  5: '#2a78d6',
+};
 
 const axisTickStyle = { fontSize: 12, fill: MUTED };
 
@@ -51,15 +51,7 @@ function StatTile({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
     <Card className="p-5 sm:p-6">
       <h2 className="text-lg font-bold text-slate-900">{title}</h2>
@@ -70,48 +62,60 @@ function Section({
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return new Date(value).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
-interface AnalyticsData {
-  dashboard: AnalyticsDashboard;
-  commentsPerPost: CommentsPerPostStat[];
-  commentsPerUser: CommentsPerUserStat[];
-  commentsPerDay: CommentsPerPeriodStat[];
-  ratingDistribution: RatingDistributionStat[];
+async function loadAnalytics(token: string) {
+  const [dashboard, commentsPerPost, commentsPerUser, commentsPerDay, ratingDistribution] = await Promise.all([
+    analyticsDashboardQuery(token),
+    commentsPerPostQuery(token),
+    commentsPerUserQuery(token),
+    commentsPerPeriodQuery(token, 'DAY'),
+    commentRatingDistributionQuery(token),
+  ]);
+  return {
+    dashboard,
+    commentsPerPost,
+    commentsPerUser,
+    commentsPerDay,
+    ratingDistribution,
+  };
 }
 
 export default function AnalyticsPage() {
   const { token } = useAuth();
-  const [data, setData] = useState<AnalyticsData | null>(null);
+  const { data, error } = useQuery(token ? 'analytics' : null, () => loadAnalytics(token ?? ''));
 
-  useEffect(() => {
-    if (!token) return;
-    Promise.all([
-      analyticsDashboardQuery(token),
-      commentsPerPostQuery(token),
-      commentsPerUserQuery(token),
-      commentsPerPeriodQuery(token, 'DAY'),
-      commentRatingDistributionQuery(token),
-    ]).then(([dashboard, commentsPerPost, commentsPerUser, commentsPerDay, ratingDistribution]) => {
-      setData({ dashboard, commentsPerPost, commentsPerUser, commentsPerDay, ratingDistribution });
-    });
-  }, [token]);
+  if (error) {
+    return <ErrorMessage message={error} />;
+  }
 
   if (!data) {
-    return null;
+    return <PageSkeleton />;
   }
 
   const { dashboard, commentsPerPost, commentsPerUser, commentsPerDay, ratingDistribution } = data;
 
-  const totalUsers = dashboard.roleBreakdown.reduce((sum, row) => sum + row.online + row.offline, 0);
-  const onlineNow = dashboard.roleBreakdown.reduce((sum, row) => sum + row.online, 0);
+  let totalUsers = 0;
+  let onlineNow = 0;
+  for (const row of dashboard.roleBreakdown) {
+    totalUsers += row.online + row.offline;
+    onlineNow += row.online;
+  }
 
-  const userGrowthData = dashboard.userGrowth.map((point) => ({ ...point, label: formatDate(point.date) }));
-  const velocityData = dashboard.commentVelocity.map((point) => ({ ...point, label: formatDate(point.date) }));
+  const userGrowthData = dashboard.userGrowth.map((point) => ({
+    ...point,
+    label: formatDate(point.date),
+  }));
+  const velocityData = dashboard.commentVelocity.map((point) => ({
+    ...point,
+    label: formatDate(point.date),
+  }));
   const commentsPerDayData = commentsPerDay
-    .slice()
-    .reverse()
+    .toReversed()
     .map((point) => ({ ...point, label: formatDate(point.period) }));
 
   return (
@@ -326,8 +330,18 @@ export default function AnalyticsPage() {
                     </span>
                   </div>
                   <div className="flex h-2 rounded-full overflow-hidden bg-slate-100">
-                    <div style={{ width: `${criticalPct}%`, backgroundColor: DIVERGING_RED }} />
-                    <div style={{ width: `${positivePct}%`, backgroundColor: DIVERGING_BLUE }} />
+                    <div
+                      style={{
+                        width: `${criticalPct}%`,
+                        backgroundColor: DIVERGING_RED,
+                      }}
+                    />
+                    <div
+                      style={{
+                        width: `${positivePct}%`,
+                        backgroundColor: DIVERGING_BLUE,
+                      }}
+                    />
                   </div>
                 </div>
               );

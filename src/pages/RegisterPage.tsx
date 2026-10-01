@@ -1,30 +1,23 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, type FormEvent } from 'react';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import { AuthLayout } from '../components/AuthLayout';
 import { TextField } from '../components/TextField';
 import { Button } from '../components/Button';
 import { cardClassName } from '../components/Card';
 import { useAuth } from '../context/AuthContext';
+import { errorMessage } from '../lib/error-message';
 import { safeRedirectPath } from '../lib/safe-redirect';
 import { AuthFormField } from '../enums/auth-form-field.enum';
 import { paths } from '../lib/paths';
 
 export default function RegisterPage() {
   const { user, register } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const from = searchParams.get('from') ?? '';
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    if (user) {
-      navigate(safeRedirectPath(from), { replace: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,14 +32,16 @@ export default function RegisterPage() {
     setError(undefined);
     try {
       await register({ name, email, password, age });
-      navigate(safeRedirectPath(from));
+      // Success sets `user`, and the next render redirects via <Navigate> below.
     } catch (submitError) {
-      setError(
-        submitError instanceof Error ? submitError.message : 'Something went wrong. Please try again.',
-      );
+      setError(errorMessage(submitError));
     } finally {
       setPending(false);
     }
+  }
+
+  if (user) {
+    return <Navigate to={safeRedirectPath(from)} replace />;
   }
 
   return (
@@ -64,9 +59,7 @@ export default function RegisterPage() {
       }
     >
       <form onSubmit={handleSubmit} className={`${cardClassName} p-6 space-y-4`}>
-        {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">{error}</p>
-        )}
+        {error && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">{error}</p>}
         <TextField id="name" label="Name" name={AuthFormField.Name} type="text" required autoComplete="name" />
         <TextField id="email" label="Email" name={AuthFormField.Email} type="email" required autoComplete="email" />
         <TextField

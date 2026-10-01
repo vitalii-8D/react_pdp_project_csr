@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
@@ -6,6 +6,7 @@ import { searchUsersQuery } from '../lib/graphql/users';
 import { startDirectMessageMutation } from '../lib/graphql/chat';
 import { paths } from '../lib/paths';
 import { MIN_QUERY_LENGTH } from '../lib/search-constants';
+import { errorMessage } from '../lib/error-message';
 import type { ChatMessageUser } from '../lib/types';
 
 const DEBOUNCE_MS = 300;
@@ -23,32 +24,55 @@ export function UserSearch({ roomPath = paths.chatRoom }: UserSearchProps) {
   const [results, setResults] = useState<ChatMessageUser[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isStartingDm, setIsStartingDm] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
 
   const trimmedQuery = query.trim();
+
+  function handleQueryChange(value: string) {
+    setQuery(value);
+    setError(undefined);
+    // Drop results for the previous query right away, so typing a new one never flashes a stale list.
+    if (value.trim().length < MIN_QUERY_LENGTH) {
+      setResults([]);
+      setIsSearching(false);
+    }
+  }
 
   useEffect(() => {
     if (!token || trimmedQuery.length < MIN_QUERY_LENGTH) {
       return;
     }
 
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
+    // `cancelled` drops responses for a query the user has already typed past - without it a slow
+    // response could overwrite the results of a newer one.
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
       setIsSearching(true);
-      searchUsersQuery(token, trimmedQuery)
-        .then(setResults)
-        .finally(() => setIsSearching(false));
+      try {
+        const users = await searchUsersQuery(token, trimmedQuery);
+        if (!cancelled) setResults(users);
+      } catch (searchError: unknown) {
+        if (!cancelled) setError(errorMessage(searchError, 'Could not search users.'));
+      } finally {
+        if (!cancelled) setIsSearching(false);
+      }
     }, DEBOUNCE_MS);
 
-    return () => clearTimeout(debounceRef.current);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
   }, [trimmedQuery, token]);
 
   async function handleSelect(userId: string) {
     if (!token || isStartingDm) return;
     setIsStartingDm(true);
+    setError(undefined);
     try {
       const room = await startDirectMessageMutation(token, userId);
       navigate(roomPath(room.id));
+    } catch (startError) {
+      setError(errorMessage(startError, 'Could not start the conversation.'));
     } finally {
       setIsStartingDm(false);
     }
@@ -58,10 +82,12 @@ export function UserSearch({ roomPath = paths.chatRoom }: UserSearchProps) {
     <div>
       <input
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={(event) => handleQueryChange(event.target.value)}
         placeholder="Search users to message (type at least 3 letters)..."
         className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
       />
+
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
       {trimmedQuery.length >= MIN_QUERY_LENGTH && (
         <div className="mt-2 border border-slate-200 rounded-xl overflow-hidden">

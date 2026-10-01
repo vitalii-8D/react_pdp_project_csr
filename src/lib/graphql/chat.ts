@@ -114,11 +114,7 @@ const CHAT_ROOM_MESSAGES_QUERY = /* GraphQL */ `
 `;
 
 export async function chatRoomMessagesQuery(token: string, roomId: string): Promise<ChatMessageEntity[]> {
-  const data = await gqlRequest<{ chatRoomMessages: ChatMessageEntity[] }>(
-    CHAT_ROOM_MESSAGES_QUERY,
-    { roomId },
-    token,
-  );
+  const data = await gqlRequest<{ chatRoomMessages: ChatMessageEntity[] }>(CHAT_ROOM_MESSAGES_QUERY, { roomId }, token);
   return data.chatRoomMessages;
 }
 
